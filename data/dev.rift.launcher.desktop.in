@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Rift
+Comment=A modern Linux command palette and app launcher
+Exec=__RIFT_EXEC__
+Icon=system-search-symbolic
+Terminal=false
+Categories=Utility;
+StartupNotify=true
+DBusActivatable=false

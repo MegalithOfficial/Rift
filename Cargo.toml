@@ -1,0 +1,15 @@
+[package]
+name = "rift"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+description = "A modern Linux command palette and app launcher focused on speed, privacy, and keyboard workflows."
+
+[dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["global_shortcuts", "async-io"] }
+gio = "0.21"
+glib = "0.21"
+gtk = { version = "0.10", package = "gtk4" }
+adw = { version = "0.8", package = "libadwaita" }
+futures-util = "0.3"
+meval = "0.2"
