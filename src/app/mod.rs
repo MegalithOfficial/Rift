@@ -1,5 +1,5 @@
 mod animation;
-mod css;
+pub(crate) mod css;
 mod settings;
 mod shortcuts;
 mod terminal;
@@ -16,6 +16,7 @@ use gtk4_layer_shell::{
 use crate::{
     config::{AppConfig, RenderMonitor},
     model::{AppIndex, QueryOptions, ResultAction, SearchResult},
+    theme,
 };
 
 const APP_ID: &str = "dev.rift.launcher";
@@ -288,7 +289,8 @@ fn build_ui(app: &adw::Application, show_on_start: bool) -> LauncherHandles {
         .child(&sheet)
         .build();
 
-    css::install_css();
+    let active_theme = theme::load_theme(&config.borrow().theme.active);
+    css::install_css(&active_theme.css);
     window.add_css_class("rift-window");
     window.set_hide_on_close(true);
     window.set_decorated(false);

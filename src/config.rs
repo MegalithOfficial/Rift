@@ -30,6 +30,26 @@ pub struct AppConfig {
     pub launcher: LauncherConfig,
     #[serde(default)]
     pub providers: ProviderConfig,
+    #[serde(default)]
+    pub theme: ThemeConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThemeConfig {
+    #[serde(default = "default_theme_id")]
+    pub active: String,
+}
+
+impl Default for ThemeConfig {
+    fn default() -> Self {
+        Self {
+            active: default_theme_id(),
+        }
+    }
+}
+
+fn default_theme_id() -> String {
+    "default".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +94,7 @@ impl Default for AppConfig {
             config_version: CONFIG_VERSION,
             launcher: LauncherConfig::default(),
             providers: ProviderConfig::default(),
+            theme: ThemeConfig::default(),
         }
     }
 }

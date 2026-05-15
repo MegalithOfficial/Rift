@@ -1,6 +1,7 @@
 mod app;
 mod config;
 mod model;
+mod theme;
 
 use adw::prelude::*;
 
