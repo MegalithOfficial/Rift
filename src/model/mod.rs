@@ -4,5 +4,5 @@ mod history;
 mod ranking;
 mod result;
 
-pub use app_index::AppIndex;
+pub use app_index::{AppIndex, QueryOptions};
 pub use result::{ResultAction, SearchResult};

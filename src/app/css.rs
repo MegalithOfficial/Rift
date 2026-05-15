@@ -265,6 +265,42 @@ pub(super) fn install_css() {
             color: #85858c;
             font-size: 12px;
         }
+
+        window.rift-settings-window entry.settings-entry,
+        window.rift-settings-window spinbutton.settings-spin {
+            min-height: 34px;
+            min-width: 120px;
+            padding: 0 10px;
+            border-radius: 8px;
+            background-color: #161619;
+            border: 1px solid #34343a;
+            color: #f4f4f5;
+        }
+
+        window.rift-settings-window switch {
+            margin: 2px 0;
+        }
+
+        window.rift-settings-window label.settings-note,
+        window.rift-settings-window label.settings-feedback {
+            color: #8b8b94;
+            font-size: 12px;
+        }
+
+        window.rift-settings-window label.settings-feedback.error {
+            color: #f38ba8;
+        }
+
+        window.rift-settings-window box.settings-actions {
+            margin-top: 4px;
+        }
+
+        window.rift-settings-window button.settings-secondary-button,
+        window.rift-settings-window button.settings-primary-button {
+            min-height: 36px;
+            padding: 0 14px;
+            border-radius: 10px;
+        }
         "#,
     );
 

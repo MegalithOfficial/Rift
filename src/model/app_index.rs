@@ -10,6 +10,12 @@ use crate::model::{
 
 const MAX_RESULTS: usize = 8;
 
+#[derive(Clone, Copy)]
+pub struct QueryOptions {
+    pub shell_enabled: bool,
+    pub calculator_enabled: bool,
+}
+
 #[derive(Clone)]
 struct DesktopEntry {
     app_info: gio::AppInfo,
@@ -100,7 +106,7 @@ impl AppIndex {
         }
     }
 
-    pub fn query(&self, term: &str) -> Vec<SearchResult> {
+    pub fn query(&self, term: &str, options: QueryOptions) -> Vec<SearchResult> {
         let trimmed = term.trim();
 
         if trimmed.is_empty() {
@@ -109,11 +115,15 @@ impl AppIndex {
 
         let mut results = Vec::new();
 
-        if let Some(result) = shell_result(trimmed) {
+        if options.shell_enabled
+            && let Some(result) = shell_result(trimmed)
+        {
             results.push((1_400, result));
         }
 
-        if let Some(result) = calculator::calculator_result(trimmed) {
+        if options.calculator_enabled
+            && let Some(result) = calculator::calculator_result(trimmed)
+        {
             results.push((10_000, result));
         }
 

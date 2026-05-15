@@ -13,17 +13,16 @@ use gtk4_layer_shell::{
     Edge, KeyboardMode, Layer, LayerShell, is_supported as layer_shell_supported,
 };
 
-use crate::model::{AppIndex, ResultAction, SearchResult};
+use crate::{
+    config::AppConfig,
+    model::{AppIndex, QueryOptions, ResultAction, SearchResult},
+};
 
 const APP_ID: &str = "dev.rift.launcher";
 const TOGGLE_SHORTCUT_ID: &str = "toggle-launcher";
-const TOGGLE_SHORTCUT_TRIGGER: &str = "CTRL+space";
-const WINDOW_WIDTH: i32 = 640;
-const WINDOW_TOP_MARGIN: i32 = 44;
 const EMPTY_HEIGHT: i32 = 64;
 const NO_MATCHES_HEIGHT: i32 = 104;
-const RESULTS_MAX_HEIGHT: i32 = 340;
-const RESULT_ROW_HEIGHT: i32 = 56;
+const RESULT_ROW_HEIGHT: i32 = 60;
 const RESULTS_BASE_HEIGHT: i32 = 108;
 const SHEET_MARGIN: i32 = 0;
 const FADE_DURATION_MS: u64 = 120;
@@ -33,6 +32,7 @@ const FADE_FRAME_MS: u64 = 16;
 pub(super) struct LauncherHandles {
     animation_source: Rc<RefCell<Option<glib::SourceId>>>,
     settings_window: Rc<RefCell<Option<gtk::ApplicationWindow>>>,
+    config: Rc<RefCell<AppConfig>>,
     window: gtk::ApplicationWindow,
     sheet: gtk::Box,
     search_entry: gtk::SearchEntry,
@@ -67,6 +67,8 @@ pub fn build() -> adw::Application {
 }
 
 fn build_ui(app: &adw::Application) -> LauncherHandles {
+    let config = Rc::new(RefCell::new(AppConfig::load()));
+    let runtime = config.borrow().runtime();
     let index = Rc::new(AppIndex::load());
     let animation_source = Rc::new(RefCell::new(None::<glib::SourceId>));
     let settings_window = Rc::new(RefCell::new(None::<gtk::ApplicationWindow>));
@@ -176,7 +178,7 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     let window = gtk::ApplicationWindow::builder()
         .application(app)
         .title("Rift")
-        .default_width(WINDOW_WIDTH)
+        .default_width(runtime.window_width)
         .default_height(EMPTY_HEIGHT)
         .modal(true)
         .deletable(false)
@@ -196,6 +198,7 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     let handles = LauncherHandles {
         animation_source: animation_source.clone(),
         settings_window: settings_window.clone(),
+        config: config.clone(),
         window: window.clone(),
         sheet: sheet.clone(),
         search_entry: search_entry.clone(),
@@ -216,7 +219,7 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
             btn.remove_css_class("hover");
             btn.remove_css_class("active");
             hide_launcher_now(&handles);
-            settings::present_settings_window(&app, &handles.settings_window);
+            settings::present_settings_window(&app, &handles);
         }
     });
     settings_button.add_controller(settings_open);
@@ -231,32 +234,14 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
 
     {
         let handles = handles.clone();
-        refresh_results(
-            &handles.index,
-            "",
-            &handles.sheet,
-            &handles.results,
-            &handles.status,
-            &handles.scroller,
-            &handles.window,
-            &handles.visible_entries,
-        );
+        refresh_results(&handles, "");
     }
 
     search_entry.connect_search_changed({
         let handles = handles.clone();
 
         move |entry| {
-            refresh_results(
-                &handles.index,
-                &entry.text(),
-                &handles.sheet,
-                &handles.results,
-                &handles.status,
-                &handles.scroller,
-                &handles.window,
-                &handles.visible_entries,
-            );
+            refresh_results(&handles, &entry.text());
         }
     });
 
@@ -330,6 +315,7 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
 
     search_entry.grab_focus();
     handles.sheet.set_opacity(0.0);
+    apply_runtime_config(&handles);
     animation::animate_show(&handles);
 
     handles
@@ -349,7 +335,7 @@ fn configure_layer_shell(window: &gtk::ApplicationWindow) {
     window.set_anchor(Edge::Left, false);
     window.set_anchor(Edge::Right, false);
     window.set_anchor(Edge::Bottom, false);
-    window.set_margin(Edge::Top, WINDOW_TOP_MARGIN);
+    window.set_margin(Edge::Top, 0);
 }
 
 fn is_gnome_session() -> bool {
@@ -359,70 +345,87 @@ fn is_gnome_session() -> bool {
         .unwrap_or(false)
 }
 
-fn refresh_results(
-    index: &AppIndex,
-    query: &str,
-    sheet: &gtk::Box,
-    results: &gtk::ListBox,
-    status: &gtk::Label,
-    scroller: &gtk::ScrolledWindow,
-    window: &gtk::ApplicationWindow,
-    visible_entries: &Rc<RefCell<Vec<SearchResult>>>,
-) {
-    while let Some(child) = results.first_child() {
-        results.remove(&child);
+fn refresh_results(handles: &LauncherHandles, query: &str) {
+    while let Some(child) = handles.results.first_child() {
+        handles.results.remove(&child);
     }
 
-    let matches = index.query(query);
+    let runtime = handles.config.borrow().runtime();
+    let matches = handles.index.query(
+        query,
+        QueryOptions {
+            shell_enabled: runtime.shell_enabled,
+            calculator_enabled: runtime.calculator_enabled,
+        },
+    );
     let query = query.trim();
 
     if query.is_empty() {
-        sheet.add_css_class("collapsed");
-        sheet.remove_css_class("expanded");
-        set_sheet_margins(sheet, SHEET_MARGIN);
-        status.set_text(&format!("{} apps", index.len()));
-        status.set_visible(false);
-        scroller.set_visible(false);
-        scroller.set_height_request(0);
-        window.set_default_size(WINDOW_WIDTH, EMPTY_HEIGHT);
-        window.set_size_request(WINDOW_WIDTH, EMPTY_HEIGHT);
-        window.queue_resize();
+        handles.sheet.add_css_class("collapsed");
+        handles.sheet.remove_css_class("expanded");
+        set_sheet_margins(&handles.sheet, SHEET_MARGIN);
+        handles
+            .status
+            .set_text(&format!("{} apps", handles.index.len()));
+        handles.status.set_visible(false);
+        handles.scroller.set_visible(false);
+        handles.scroller.set_height_request(0);
+        handles
+            .window
+            .set_default_size(runtime.window_width, EMPTY_HEIGHT);
+        handles
+            .window
+            .set_size_request(runtime.window_width, EMPTY_HEIGHT);
+        handles.window.queue_resize();
     } else if matches.is_empty() {
-        sheet.remove_css_class("collapsed");
-        sheet.add_css_class("expanded");
-        set_sheet_margins(sheet, SHEET_MARGIN);
-        status.set_text("No matches");
-        status.set_visible(true);
-        scroller.set_visible(false);
-        scroller.set_height_request(0);
-        window.set_default_size(WINDOW_WIDTH, NO_MATCHES_HEIGHT);
-        window.set_size_request(WINDOW_WIDTH, NO_MATCHES_HEIGHT);
-        window.queue_resize();
+        handles.sheet.remove_css_class("collapsed");
+        handles.sheet.add_css_class("expanded");
+        set_sheet_margins(&handles.sheet, SHEET_MARGIN);
+        handles.status.set_text("No matches");
+        handles.status.set_visible(true);
+        handles.scroller.set_visible(false);
+        handles.scroller.set_height_request(0);
+        handles
+            .window
+            .set_default_size(runtime.window_width, NO_MATCHES_HEIGHT);
+        handles
+            .window
+            .set_size_request(runtime.window_width, NO_MATCHES_HEIGHT);
+        handles.window.queue_resize();
     } else {
-        sheet.remove_css_class("collapsed");
-        sheet.add_css_class("expanded");
-        set_sheet_margins(sheet, SHEET_MARGIN);
-        status.set_text(&format!("{} results", matches.len()));
-        status.set_visible(true);
-        scroller.set_visible(true);
-        let visible_rows = matches.len().min(4) as i32;
+        handles.sheet.remove_css_class("collapsed");
+        handles.sheet.add_css_class("expanded");
+        set_sheet_margins(&handles.sheet, SHEET_MARGIN);
+        handles
+            .status
+            .set_text(&format!("{} results", matches.len()));
+        handles.status.set_visible(true);
+        handles.scroller.set_visible(true);
+        let visible_rows = matches.len().min(runtime.max_visible_results) as i32;
+        let max_results_height =
+            RESULTS_BASE_HEIGHT + runtime.max_visible_results as i32 * RESULT_ROW_HEIGHT;
         let results_height =
-            (RESULTS_BASE_HEIGHT + visible_rows * RESULT_ROW_HEIGHT).min(RESULTS_MAX_HEIGHT);
-        let scroller_height = (visible_rows * RESULT_ROW_HEIGHT).min(240);
-        scroller.set_height_request(scroller_height);
-        window.set_default_size(WINDOW_WIDTH, results_height);
-        window.set_size_request(WINDOW_WIDTH, results_height);
-        window.queue_resize();
+            (RESULTS_BASE_HEIGHT + visible_rows * RESULT_ROW_HEIGHT).min(max_results_height);
+        let scroller_height =
+            (visible_rows * RESULT_ROW_HEIGHT).min(max_results_height - RESULTS_BASE_HEIGHT);
+        handles.scroller.set_height_request(scroller_height);
+        handles
+            .window
+            .set_default_size(runtime.window_width, results_height);
+        handles
+            .window
+            .set_size_request(runtime.window_width, results_height);
+        handles.window.queue_resize();
     }
 
     for entry in &matches {
-        results.append(&build_row(entry));
+        handles.results.append(&build_row(entry));
     }
 
-    *visible_entries.borrow_mut() = matches;
+    *handles.visible_entries.borrow_mut() = matches;
 
-    if let Some(row) = results.row_at_index(0) {
-        results.select_row(Some(&row));
+    if let Some(row) = handles.results.row_at_index(0) {
+        handles.results.select_row(Some(&row));
     }
 }
 
@@ -509,16 +512,7 @@ pub(super) fn reset_launcher(handles: &LauncherHandles) {
 }
 
 fn reset_launcher_results(handles: &LauncherHandles) {
-    refresh_results(
-        &handles.index,
-        "",
-        &handles.sheet,
-        &handles.results,
-        &handles.status,
-        &handles.scroller,
-        &handles.window,
-        &handles.visible_entries,
-    );
+    refresh_results(handles, "");
 }
 
 fn dismiss_launcher(handles: &LauncherHandles) {
@@ -580,4 +574,25 @@ fn warn_if_dev_desktop_entry_missing(app: &adw::Application) {
         "Install the dev desktop entry with ./scripts/install-dev-desktop-entry.sh to enable GNOME global shortcuts.",
     ));
     app.send_notification(Some("dev-desktop-entry"), &notification);
+}
+
+pub(super) fn current_config(handles: &LauncherHandles) -> AppConfig {
+    handles.config.borrow().clone()
+}
+
+pub(super) fn save_config(handles: &LauncherHandles, config: AppConfig) -> Result<(), String> {
+    config.save()?;
+    *handles.config.borrow_mut() = config;
+    apply_runtime_config(handles);
+    Ok(())
+}
+
+pub(super) fn apply_runtime_config(handles: &LauncherHandles) {
+    let runtime = handles.config.borrow().runtime();
+    if !is_gnome_session() && layer_shell_supported() {
+        handles
+            .window
+            .set_margin(Edge::Top, runtime.window_top_margin);
+    }
+    reset_launcher_results(handles);
 }
