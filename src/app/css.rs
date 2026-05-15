@@ -316,6 +316,29 @@ pub(super) fn install_css() {
             font-size: 13px;
         }
 
+        window.rift-settings-window dropdown.settings-dropdown {
+            min-height: 28px;
+            min-width: 150px;
+            border-radius: 7px;
+            background-color: #161619;
+            border: 1px solid #34343a;
+            color: #f4f4f5;
+            font-size: 12px;
+        }
+
+        window.rift-settings-window dropdown.settings-dropdown button {
+            min-height: 28px;
+            padding: 0 10px;
+            border-radius: 7px;
+            background-color: transparent;
+            border: none;
+            color: inherit;
+        }
+
+        window.rift-settings-window dropdown.settings-dropdown:hover {
+            border-color: #44444c;
+        }
+
         window.rift-settings-window spinbutton.settings-spin text {
             background-color: transparent;
             color: inherit;

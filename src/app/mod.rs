@@ -14,7 +14,7 @@ use gtk4_layer_shell::{
 };
 
 use crate::{
-    config::AppConfig,
+    config::{AppConfig, RenderMonitor},
     model::{AppIndex, QueryOptions, ResultAction, SearchResult},
 };
 
@@ -55,6 +55,7 @@ pub(super) enum SaveOutcome {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum CliCommand {
     Activate,
+    Background,
     Show,
     Hide,
     Toggle,
@@ -73,7 +74,7 @@ pub fn build() -> adw::Application {
         let resident_hold = resident_hold.clone();
 
         move |app| {
-            let handles = ensure_launcher(app, &launcher, &resident_hold);
+            let handles = ensure_launcher(app, &launcher, &resident_hold, true);
             toggle_window(&handles);
         }
     });
@@ -94,14 +95,16 @@ fn ensure_launcher(
     app: &adw::Application,
     launcher: &Rc<RefCell<Option<LauncherHandles>>>,
     resident_hold: &Rc<RefCell<Option<ApplicationHoldGuard>>>,
+    show_on_create: bool,
 ) -> LauncherHandles {
     if let Some(handles) = launcher.borrow().as_ref().cloned() {
         return handles;
     }
 
     *resident_hold.borrow_mut() = Some(app.hold());
-    let handles = build_ui(app);
+    let handles = build_ui(app, show_on_create);
     warn_if_dev_desktop_entry_missing(app);
+    let _ = sync_launch_at_login(current_config(&handles).launcher.launch_at_login);
     shortcuts::start_global_shortcut_registration(handles.clone());
     *launcher.borrow_mut() = Some(handles.clone());
     handles
@@ -115,11 +118,14 @@ fn handle_cli_command(
 ) {
     match command {
         CliCommand::Activate | CliCommand::Toggle => {
-            let handles = ensure_launcher(app, launcher, resident_hold);
+            let handles = ensure_launcher(app, launcher, resident_hold, true);
             toggle_window(&handles);
         }
+        CliCommand::Background => {
+            let _ = ensure_launcher(app, launcher, resident_hold, false);
+        }
         CliCommand::Show => {
-            let handles = ensure_launcher(app, launcher, resident_hold);
+            let handles = ensure_launcher(app, launcher, resident_hold, true);
             show_window(&handles);
         }
         CliCommand::Hide => {
@@ -145,6 +151,8 @@ fn parse_cli_command(arguments: impl IntoIterator<Item = OsString>) -> CliComman
 
     if args.iter().any(|arg| arg == "--show") {
         CliCommand::Show
+    } else if args.iter().any(|arg| arg == "--background") {
+        CliCommand::Background
     } else if args.iter().any(|arg| arg == "--hide") {
         CliCommand::Hide
     } else if args.iter().any(|arg| arg == "--toggle") {
@@ -156,7 +164,7 @@ fn parse_cli_command(arguments: impl IntoIterator<Item = OsString>) -> CliComman
     }
 }
 
-fn build_ui(app: &adw::Application) -> LauncherHandles {
+fn build_ui(app: &adw::Application, show_on_start: bool) -> LauncherHandles {
     let config = Rc::new(RefCell::new(AppConfig::load()));
     let runtime = config.borrow().runtime();
     let index = Rc::new(AppIndex::load());
@@ -381,6 +389,10 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
                 return;
             }
 
+            if current_config(&handles).launcher.keep_open_on_focus_loss {
+                return;
+            }
+
             dismiss_launcher(&handles);
         }
     });
@@ -409,10 +421,15 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
         }
     });
 
-    search_entry.grab_focus();
-    handles.sheet.set_opacity(0.0);
     apply_runtime_config(&handles);
-    animation::animate_show(&handles);
+    handles.sheet.set_opacity(0.0);
+    if show_on_start {
+        search_entry.grab_focus();
+        animation::animate_show(&handles);
+    } else {
+        handles.window.hide();
+        handles.sheet.set_opacity(1.0);
+    }
 
     handles
 }
@@ -607,7 +624,15 @@ fn show_window(handles: &LauncherHandles) {
         return;
     }
 
-    reset_launcher(handles);
+    apply_runtime_config(handles);
+    let runtime = current_config(handles).runtime();
+    if runtime.clear_input_on_hide {
+        reset_launcher(handles);
+    } else {
+        refresh_results(handles, &handles.search_entry.text());
+        handles.search_entry.grab_focus();
+    }
+    apply_render_monitor(handles, runtime.render_monitor);
     animation::animate_show(handles);
 }
 
@@ -633,8 +658,10 @@ fn hide_launcher_now(handles: &LauncherHandles) {
     animation::cancel_animation(handles);
     handles.window.hide();
     handles.sheet.set_opacity(1.0);
-    handles.search_entry.set_text("");
-    reset_launcher_results(handles);
+    if current_config(handles).launcher.clear_input_on_hide {
+        handles.search_entry.set_text("");
+        reset_launcher_results(handles);
+    }
 }
 
 fn activate_result(result: &SearchResult, handles: &LauncherHandles) -> Result<(), String> {
@@ -765,6 +792,7 @@ pub(super) fn save_config(
         handles.config.borrow().launcher.shortcut_trigger != config.launcher.shortcut_trigger;
     config.save()?;
     *handles.config.borrow_mut() = config;
+    sync_launch_at_login(handles.config.borrow().launcher.launch_at_login)?;
     apply_runtime_config(handles);
     if shortcut_changed {
         shortcuts::restart_global_shortcut_registration(handles);
@@ -782,7 +810,62 @@ pub(super) fn apply_runtime_config(handles: &LauncherHandles) {
             .window
             .set_margin(Edge::Top, runtime.window_top_margin);
     }
+    apply_render_monitor(handles, runtime.render_monitor);
     reset_launcher_results(handles);
+}
+
+fn apply_render_monitor(handles: &LauncherHandles, preference: RenderMonitor) {
+    if is_gnome_session() || !layer_shell_supported() || !handles.window.is_layer_window() {
+        return;
+    }
+
+    let monitor = match preference {
+        RenderMonitor::Cursor => cursor_monitor().or_else(default_monitor),
+        RenderMonitor::Default => default_monitor(),
+    };
+    handles.window.set_monitor(monitor.as_ref());
+}
+
+fn default_monitor() -> Option<gdk::Monitor> {
+    let display = gdk::Display::default()?;
+    let monitors = display.monitors();
+    let first = monitors.item(0)?;
+    first.downcast::<gdk::Monitor>().ok()
+}
+
+fn cursor_monitor() -> Option<gdk::Monitor> {
+    let display = gdk::Display::default()?;
+    let seat = display.default_seat()?;
+    let pointer = seat.pointer()?;
+    let (surface, _, _) = pointer.surface_at_position();
+    surface.and_then(|surface| display.monitor_at_surface(&surface))
+}
+
+fn sync_launch_at_login(enabled: bool) -> Result<(), String> {
+    let autostart_dir = env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config")))
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("autostart");
+    let autostart_file = autostart_dir.join(format!("{APP_ID}.desktop"));
+
+    if !enabled {
+        if autostart_file.exists() {
+            std::fs::remove_file(&autostart_file).map_err(|error| error.to_string())?;
+        }
+        return Ok(());
+    }
+
+    std::fs::create_dir_all(&autostart_dir).map_err(|error| error.to_string())?;
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    let exec = format!(
+        "{} --background",
+        glib::shell_quote(executable).to_string_lossy()
+    );
+    let desktop_entry = format!(
+        "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Rift\nComment=Start Rift in the background\nExec={exec}\nIcon=system-search-symbolic\nTerminal=false\nNoDisplay=true\nStartupNotify=false\nX-GNOME-Autostart-enabled=true\n"
+    );
+    std::fs::write(autostart_file, desktop_entry).map_err(|error| error.to_string())
 }
 
 pub(super) fn restart_application(handles: &LauncherHandles) -> Result<(), String> {

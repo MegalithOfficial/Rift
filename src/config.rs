@@ -16,6 +16,8 @@ pub struct RuntimeConfig {
     pub window_width: i32,
     pub window_top_margin: i32,
     pub max_visible_results: usize,
+    pub clear_input_on_hide: bool,
+    pub render_monitor: RenderMonitor,
     pub shell_enabled: bool,
     pub calculator_enabled: bool,
 }
@@ -40,6 +42,22 @@ pub struct LauncherConfig {
     pub window_top_margin: i32,
     #[serde(default = "default_max_visible_results")]
     pub max_visible_results: u32,
+    #[serde(default = "default_false")]
+    pub launch_at_login: bool,
+    #[serde(default = "default_true")]
+    pub clear_input_on_hide: bool,
+    #[serde(default)]
+    pub render_monitor: RenderMonitor,
+    #[serde(default = "default_false")]
+    pub keep_open_on_focus_loss: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RenderMonitor {
+    #[default]
+    Cursor,
+    Default,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +85,10 @@ impl Default for LauncherConfig {
             window_width: default_window_width(),
             window_top_margin: default_window_top_margin(),
             max_visible_results: default_max_visible_results(),
+            launch_at_login: false,
+            clear_input_on_hide: true,
+            render_monitor: RenderMonitor::default(),
+            keep_open_on_focus_loss: false,
         }
     }
 }
@@ -106,6 +128,8 @@ impl AppConfig {
             window_width: launcher.window_width,
             window_top_margin: launcher.window_top_margin,
             max_visible_results: launcher.max_visible_results as usize,
+            clear_input_on_hide: launcher.clear_input_on_hide,
+            render_monitor: launcher.render_monitor,
             shell_enabled: providers.shell_enabled,
             calculator_enabled: providers.calculator_enabled,
         }
@@ -171,4 +195,8 @@ fn default_max_visible_results() -> u32 {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_false() -> bool {
+    false
 }

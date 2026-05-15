@@ -3,7 +3,7 @@ use std::{cell::RefCell, collections::HashSet, rc::Rc};
 use adw::prelude::*;
 use gtk::{Align, Orientation, gdk};
 
-use crate::config::AppConfig;
+use crate::config::{AppConfig, RenderMonitor};
 
 use super::{LauncherHandles, SaveOutcome, current_config, restart_application, save_config};
 
@@ -93,6 +93,35 @@ fn build_settings_window(
         .build();
     results_spin.set_widget_name("results");
 
+    let autostart_switch = gtk::Switch::builder()
+        .active(config.launcher.launch_at_login)
+        .valign(Align::Center)
+        .build();
+    autostart_switch.set_widget_name("launch-at-login");
+
+    let clear_input_switch = gtk::Switch::builder()
+        .active(config.launcher.clear_input_on_hide)
+        .valign(Align::Center)
+        .build();
+    clear_input_switch.set_widget_name("clear-input-on-hide");
+
+    let monitor_model = gtk::StringList::new(&["Monitor with cursor", "Default monitor"]);
+    let monitor_dropdown = gtk::DropDown::builder()
+        .model(&monitor_model)
+        .css_classes(["settings-dropdown"])
+        .build();
+    monitor_dropdown.set_widget_name("render-monitor");
+    monitor_dropdown.set_selected(match config.launcher.render_monitor {
+        RenderMonitor::Cursor => 0,
+        RenderMonitor::Default => 1,
+    });
+
+    let keep_focus_switch = gtk::Switch::builder()
+        .active(config.launcher.keep_open_on_focus_loss)
+        .valign(Align::Center)
+        .build();
+    keep_focus_switch.set_widget_name("keep-open-on-focus-loss");
+
     let shell_switch = gtk::Switch::builder()
         .active(config.providers.shell_enabled)
         .valign(Align::Center)
@@ -115,6 +144,26 @@ fn build_settings_window(
             "Visible results",
             Some("Maximum items shown without scrolling."),
             results_spin.clone().upcast::<gtk::Widget>(),
+        ),
+        labeled_row(
+            "Launch at login",
+            Some("Start Rift automatically in the background."),
+            autostart_switch.clone().upcast::<gtk::Widget>(),
+        ),
+        labeled_row(
+            "Clear input on hide",
+            Some("Reset the query whenever the launcher is dismissed."),
+            clear_input_switch.clone().upcast::<gtk::Widget>(),
+        ),
+        labeled_row(
+            "Render on",
+            Some("Best effort. Monitor targeting depends on the desktop/compositor."),
+            monitor_dropdown.clone().upcast::<gtk::Widget>(),
+        ),
+        labeled_row(
+            "Don't hide after losing focus",
+            Some("Keep Rift open when another window takes focus."),
+            keep_focus_switch.clone().upcast::<gtk::Widget>(),
         ),
     ]);
 
@@ -193,6 +242,53 @@ fn build_settings_window(
             let value = spin.value() as u32;
             apply_change(&handles, &banner, |config| {
                 config.launcher.max_visible_results = value;
+            });
+        }
+    });
+
+    autostart_switch.connect_active_notify({
+        let handles = handles.clone();
+        let banner = banner_state.clone();
+        move |switch| {
+            let active = switch.is_active();
+            apply_change(&handles, &banner, |config| {
+                config.launcher.launch_at_login = active;
+            });
+        }
+    });
+
+    clear_input_switch.connect_active_notify({
+        let handles = handles.clone();
+        let banner = banner_state.clone();
+        move |switch| {
+            let active = switch.is_active();
+            apply_change(&handles, &banner, |config| {
+                config.launcher.clear_input_on_hide = active;
+            });
+        }
+    });
+
+    monitor_dropdown.connect_selected_notify({
+        let handles = handles.clone();
+        let banner = banner_state.clone();
+        move |dropdown| {
+            let selection = match dropdown.selected() {
+                1 => RenderMonitor::Default,
+                _ => RenderMonitor::Cursor,
+            };
+            apply_change(&handles, &banner, |config| {
+                config.launcher.render_monitor = selection;
+            });
+        }
+    });
+
+    keep_focus_switch.connect_active_notify({
+        let handles = handles.clone();
+        let banner = banner_state.clone();
+        move |switch| {
+            let active = switch.is_active();
+            apply_change(&handles, &banner, |config| {
+                config.launcher.keep_open_on_focus_loss = active;
             });
         }
     });
