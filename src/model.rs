@@ -162,7 +162,7 @@ impl AppIndex {
         }
 
         if let Some(result) = calculator_result(trimmed) {
-            results.push((1_250, result));
+            results.push((10_000, result));
         }
 
         let history = self.history.borrow();
@@ -247,7 +247,8 @@ fn calculator_result(query: &str) -> Option<SearchResult> {
         return None;
     }
 
-    let value = meval::eval_str(query).ok()?;
+    let expression = normalize_expression(query);
+    let value = meval::eval_str(&expression).ok()?;
     let rendered = format_number(value);
 
     Some(SearchResult {
@@ -259,6 +260,13 @@ fn calculator_result(query: &str) -> Option<SearchResult> {
         usage_key: format!("calc:{query}"),
         action: ResultAction::CopyText(rendered),
     })
+}
+
+fn normalize_expression(query: &str) -> String {
+    query
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .collect()
 }
 
 struct WeightedText<'a> {
@@ -620,7 +628,10 @@ fn format_number(value: f64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{NormalizedText, WeightedText, single_term_score, weighted_match_score};
+    use super::{
+        NormalizedText, ResultAction, WeightedText, calculator_result, single_term_score,
+        weighted_match_score,
+    };
 
     #[test]
     fn scores_word_prefix_above_subsequence() {
@@ -655,5 +666,18 @@ mod tests {
         let typo_score = weighted_match_score("vesktpo", &[WeightedText::new("Vesktop", 760)]);
 
         assert!(score.unwrap() > typo_score.unwrap());
+    }
+
+    #[test]
+    fn detects_spaced_calculator_expression() {
+        let result = calculator_result("2 + 2").unwrap();
+
+        assert_eq!(result.title(), "4");
+        assert!(matches!(result.action(), ResultAction::CopyText(value) if value == "4"));
+    }
+
+    #[test]
+    fn rejects_non_expression_queries() {
+        assert!(calculator_result("java 21").is_none());
     }
 }

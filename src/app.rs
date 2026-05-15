@@ -10,11 +10,14 @@ use std::{
 use adw::prelude::*;
 use ashpd::desktop::{
     CreateSessionOptions,
-    global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, NewShortcut},
+    global_shortcuts::{BindShortcutsOptions, GlobalShortcuts, ListShortcutsOptions, NewShortcut},
 };
 use futures_util::StreamExt;
 use gio::ApplicationHoldGuard;
 use gtk::{Align, Orientation, gdk};
+use gtk4_layer_shell::{
+    Edge, KeyboardMode, Layer, LayerShell, is_supported as layer_shell_supported,
+};
 
 use crate::model::{AppIndex, ResultAction, SearchResult};
 
@@ -22,6 +25,7 @@ const APP_ID: &str = "dev.rift.launcher";
 const TOGGLE_SHORTCUT_ID: &str = "toggle-launcher";
 const TOGGLE_SHORTCUT_TRIGGER: &str = "CTRL+space";
 const WINDOW_WIDTH: i32 = 640;
+const WINDOW_TOP_MARGIN: i32 = 44;
 const EMPTY_HEIGHT: i32 = 64;
 const NO_MATCHES_HEIGHT: i32 = 104;
 const RESULTS_MAX_HEIGHT: i32 = 340;
@@ -34,6 +38,7 @@ const FADE_FRAME_MS: u64 = 16;
 #[derive(Clone)]
 struct LauncherHandles {
     animation_source: Rc<RefCell<Option<glib::SourceId>>>,
+    settings_window: Rc<RefCell<Option<gtk::ApplicationWindow>>>,
     window: gtk::ApplicationWindow,
     sheet: gtk::Box,
     search_entry: gtk::SearchEntry,
@@ -70,6 +75,7 @@ pub fn build() -> adw::Application {
 fn build_ui(app: &adw::Application) -> LauncherHandles {
     let index = Rc::new(AppIndex::load());
     let animation_source = Rc::new(RefCell::new(None::<glib::SourceId>));
+    let settings_window = Rc::new(RefCell::new(None::<gtk::ApplicationWindow>));
     let visible_entries = Rc::new(RefCell::new(Vec::<SearchResult>::new()));
     let status = gtk::Label::builder()
         .halign(Align::Start)
@@ -97,6 +103,69 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
         .child(&results)
         .build();
 
+    let settings_icon = gtk::Image::builder()
+        .icon_name("open-menu-symbolic")
+        .pixel_size(14)
+        .halign(Align::Center)
+        .valign(Align::Center)
+        .hexpand(true)
+        .vexpand(true)
+        .build();
+
+    let settings_button = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .css_classes(["settings-button"])
+        .tooltip_text("Settings")
+        .focusable(false)
+        .can_focus(false)
+        .valign(Align::Center)
+        .halign(Align::End)
+        .width_request(28)
+        .height_request(28)
+        .build();
+    settings_button.set_hexpand(false);
+    settings_button.set_vexpand(false);
+    settings_button.set_hexpand_set(true);
+    settings_button.set_vexpand_set(true);
+    settings_button.append(&settings_icon);
+
+    let settings_hover = gtk::EventControllerMotion::new();
+    {
+        let btn = settings_button.clone();
+        settings_hover.connect_enter(move |_, _, _| {
+            btn.add_css_class("hover");
+        });
+    }
+    {
+        let btn = settings_button.clone();
+        settings_hover.connect_leave(move |_| {
+            btn.remove_css_class("hover");
+        });
+    }
+    settings_button.add_controller(settings_hover);
+
+    let settings_click = gtk::GestureClick::new();
+    {
+        let btn = settings_button.clone();
+        settings_click.connect_pressed(move |_, _, _, _| {
+            btn.add_css_class("active");
+        });
+    }
+    {
+        let btn = settings_button.clone();
+        settings_click.connect_released(move |_, _, _, _| {
+            btn.remove_css_class("active");
+        });
+    }
+    settings_button.add_controller(settings_click);
+
+    let search_row = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .css_classes(["search-row"])
+        .build();
+    search_row.append(&search_entry);
+    search_row.append(&settings_button);
+
     let sheet = gtk::Box::builder()
         .orientation(Orientation::Vertical)
         .spacing(8)
@@ -106,7 +175,7 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
         .margin_end(SHEET_MARGIN)
         .css_classes(["spotlight-sheet"])
         .build();
-    sheet.append(&search_entry);
+    sheet.append(&search_row);
     sheet.append(&status);
     sheet.append(&scroller);
 
@@ -115,6 +184,8 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
         .title("Rift")
         .default_width(WINDOW_WIDTH)
         .default_height(EMPTY_HEIGHT)
+        .modal(true)
+        .deletable(false)
         .resizable(false)
         .child(&sheet)
         .build();
@@ -123,9 +194,14 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     window.add_css_class("rift-window");
     window.set_hide_on_close(true);
     window.set_decorated(false);
+    window.set_modal(true);
+    window.set_deletable(false);
+    window.set_startup_id(APP_ID);
+    configure_layer_shell(&window);
 
     let handles = LauncherHandles {
         animation_source: animation_source.clone(),
+        settings_window: settings_window.clone(),
         window: window.clone(),
         sheet: sheet.clone(),
         search_entry: search_entry.clone(),
@@ -135,6 +211,29 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
         index: index.clone(),
         visible_entries: visible_entries.clone(),
     };
+
+    let settings_open = gtk::GestureClick::new();
+    settings_open.connect_released({
+        let app = app.clone();
+        let handles = handles.clone();
+        let btn = settings_button.clone();
+
+        move |_, _, _, _| {
+            btn.remove_css_class("hover");
+            btn.remove_css_class("active");
+            hide_launcher_now(&handles);
+            present_settings_window(&app, &handles.settings_window);
+        }
+    });
+    settings_button.add_controller(settings_open);
+
+    window.connect_hide({
+        let btn = settings_button.clone();
+        move |_| {
+            btn.remove_css_class("hover");
+            btn.remove_css_class("active");
+        }
+    });
 
     {
         let handles = handles.clone();
@@ -240,6 +339,30 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     animate_show(&handles);
 
     handles
+}
+
+fn configure_layer_shell(window: &gtk::ApplicationWindow) {
+    if is_gnome_session() || !layer_shell_supported() {
+        return;
+    }
+
+    window.init_layer_shell();
+    window.set_namespace(Some("rift"));
+    window.set_layer(Layer::Overlay);
+    window.set_keyboard_mode(KeyboardMode::Exclusive);
+    window.set_exclusive_zone(0);
+    window.set_anchor(Edge::Top, true);
+    window.set_anchor(Edge::Left, false);
+    window.set_anchor(Edge::Right, false);
+    window.set_anchor(Edge::Bottom, false);
+    window.set_margin(Edge::Top, WINDOW_TOP_MARGIN);
+}
+
+fn is_gnome_session() -> bool {
+    env::var("XDG_CURRENT_DESKTOP")
+        .or_else(|_| env::var("XDG_SESSION_DESKTOP"))
+        .map(|desktop| desktop.to_ascii_lowercase().contains("gnome"))
+        .unwrap_or(false)
 }
 
 fn refresh_results(
@@ -387,6 +510,11 @@ fn toggle_window(handles: &LauncherHandles) {
 
 fn reset_launcher(handles: &LauncherHandles) {
     handles.search_entry.set_text("");
+    reset_launcher_results(handles);
+    handles.search_entry.grab_focus();
+}
+
+fn reset_launcher_results(handles: &LauncherHandles) {
     refresh_results(
         &handles.index,
         "",
@@ -397,7 +525,6 @@ fn reset_launcher(handles: &LauncherHandles) {
         &handles.window,
         &handles.visible_entries,
     );
-    handles.search_entry.grab_focus();
 }
 
 fn dismiss_launcher(handles: &LauncherHandles) {
@@ -406,6 +533,167 @@ fn dismiss_launcher(handles: &LauncherHandles) {
     }
 
     animate_hide(handles);
+}
+
+fn hide_launcher_now(handles: &LauncherHandles) {
+    cancel_animation(handles);
+    handles.window.hide();
+    handles.sheet.set_opacity(1.0);
+    handles.search_entry.set_text("");
+    reset_launcher_results(handles);
+}
+
+fn present_settings_window(
+    app: &adw::Application,
+    settings_window: &Rc<RefCell<Option<gtk::ApplicationWindow>>>,
+) {
+    if let Some(window) = settings_window.borrow().as_ref() {
+        window.present();
+        return;
+    }
+
+    let window = build_settings_window(app);
+    window.present();
+    *settings_window.borrow_mut() = Some(window);
+}
+
+fn build_settings_window(app: &adw::Application) -> gtk::ApplicationWindow {
+    let title = gtk::Label::builder()
+        .label("Settings")
+        .halign(Align::Start)
+        .hexpand(true)
+        .css_classes(["settings-title"])
+        .build();
+
+    let close_button = gtk::Button::builder()
+        .icon_name("window-close-symbolic")
+        .tooltip_text("Close")
+        .css_classes(["flat", "settings-close"])
+        .build();
+
+    let header_inner = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .css_classes(["settings-header"])
+        .build();
+    header_inner.append(&title);
+    header_inner.append(&close_button);
+
+    let header = gtk::WindowHandle::builder().child(&header_inner).build();
+
+    let content = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(20)
+        .margin_top(20)
+        .margin_bottom(24)
+        .margin_start(24)
+        .margin_end(24)
+        .build();
+    content.append(&header);
+    content.append(&settings_section(
+        "General",
+        &[("Global shortcut", TOGGLE_SHORTCUT_TRIGGER)],
+    ));
+    content.append(&settings_section(
+        "About",
+        &[
+            ("Version", env!("CARGO_PKG_VERSION")),
+            ("License", "MPL-2.0"),
+        ],
+    ));
+
+    let window = gtk::ApplicationWindow::builder()
+        .application(app)
+        .title("Rift Settings")
+        .default_width(420)
+        .default_height(280)
+        .resizable(false)
+        .modal(false)
+        .decorated(false)
+        .child(&content)
+        .build();
+    window.add_css_class("rift-settings-window");
+    window.set_hide_on_close(true);
+    window.connect_close_request(|window| {
+        window.hide();
+        glib::Propagation::Stop
+    });
+
+    close_button.connect_clicked({
+        let window = window.clone();
+
+        move |_| {
+            window.hide();
+        }
+    });
+
+    let escape = gtk::EventControllerKey::new();
+    escape.set_propagation_phase(gtk::PropagationPhase::Capture);
+    escape.connect_key_pressed({
+        let window = window.clone();
+
+        move |_, key, _, _| {
+            if key == gdk::Key::Escape {
+                window.hide();
+                return true.into();
+            }
+
+            false.into()
+        }
+    });
+    window.add_controller(escape);
+
+    window
+}
+
+fn settings_section(title: &str, rows: &[(&str, &str)]) -> gtk::Box {
+    let heading = gtk::Label::builder()
+        .label(title)
+        .halign(Align::Start)
+        .css_classes(["settings-section-title"])
+        .build();
+
+    let group = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .css_classes(["settings-group"])
+        .build();
+    for (label, value) in rows {
+        group.append(&settings_row(label, value));
+    }
+
+    let section = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .css_classes(["settings-section"])
+        .build();
+    section.append(&heading);
+    section.append(&group);
+
+    section
+}
+
+fn settings_row(label: &str, value: &str) -> gtk::Box {
+    let label = gtk::Label::builder()
+        .label(label)
+        .halign(Align::Start)
+        .hexpand(true)
+        .css_classes(["settings-row-label"])
+        .build();
+
+    let value = gtk::Label::builder()
+        .label(value)
+        .halign(Align::End)
+        .css_classes(["settings-row-value"])
+        .build();
+
+    let row = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(16)
+        .css_classes(["settings-row"])
+        .build();
+    row.append(&label);
+    row.append(&value);
+    row
 }
 
 fn activate_result(result: &SearchResult, handles: &LauncherHandles) -> Result<(), String> {
@@ -432,7 +720,9 @@ fn activate_result(result: &SearchResult, handles: &LauncherHandles) -> Result<(
 fn start_global_shortcut_registration(handles: LauncherHandles) {
     glib::MainContext::default().spawn_local(async move {
         if let Err(error) = register_global_shortcut(handles).await {
-            eprintln!("global shortcut registration failed: {error}");
+            if env::var_os("RIFT_DEBUG").is_some() {
+                eprintln!("rift: global shortcut unavailable: {error}");
+            }
         }
     });
 }
@@ -456,20 +746,22 @@ async fn register_global_shortcut(handles: LauncherHandles) -> Result<(), String
         .await
         .map_err(|error| error.to_string())?;
 
-    let request = shortcuts
-        .bind_shortcuts(
-            &session,
-            &[NewShortcut::new(TOGGLE_SHORTCUT_ID, "Toggle Rift launcher")
-                .preferred_trigger(Some(TOGGLE_SHORTCUT_TRIGGER))],
-            None,
-            BindShortcutsOptions::default(),
-        )
-        .await
-        .map_err(|error| error.to_string())?;
+    if !portal_has_toggle_shortcut(&shortcuts, &session).await? {
+        let request = shortcuts
+            .bind_shortcuts(
+                &session,
+                &[NewShortcut::new(TOGGLE_SHORTCUT_ID, "Toggle Rift launcher")
+                    .preferred_trigger(Some(TOGGLE_SHORTCUT_TRIGGER))],
+                None,
+                BindShortcutsOptions::default(),
+            )
+            .await
+            .map_err(|error| error.to_string())?;
 
-    let response = request.response().map_err(|error| error.to_string())?;
-    if response.shortcuts().is_empty() {
-        return Err("no global shortcuts were granted by the portal".to_string());
+        let response = request.response().map_err(|error| error.to_string())?;
+        if response.shortcuts().is_empty() {
+            return Err("no global shortcuts were granted by the portal".to_string());
+        }
     }
 
     let mut activated = shortcuts
@@ -484,6 +776,22 @@ async fn register_global_shortcut(handles: LauncherHandles) -> Result<(), String
     }
 
     Ok(())
+}
+
+async fn portal_has_toggle_shortcut(
+    shortcuts: &GlobalShortcuts,
+    session: &ashpd::desktop::Session<GlobalShortcuts>,
+) -> Result<bool, String> {
+    let request = shortcuts
+        .list_shortcuts(session, ListShortcutsOptions::default())
+        .await
+        .map_err(|error| error.to_string())?;
+    let response = request.response().map_err(|error| error.to_string())?;
+
+    Ok(response
+        .shortcuts()
+        .iter()
+        .any(|shortcut| shortcut.id() == TOGGLE_SHORTCUT_ID))
 }
 
 fn launch_in_terminal(command: &str) -> Result<(), String> {
@@ -696,15 +1004,32 @@ fn install_css() {
             padding: 0;
         }
 
-        window.rift-window entry.search-field {
+        window.rift-window box.search-row {
             min-height: 52px;
-            padding: 0 18px;
-            margin: 0;
             border-radius: 26px;
             background-color: #1f1f22;
+            border: 1px solid #34343a;
+            padding: 0;
+        }
+
+        window.rift-window box.spotlight-sheet.expanded box.search-row {
+            min-height: 58px;
+            border-radius: 0;
+            background-color: transparent;
+            border: none;
+            padding: 0;
+        }
+
+        window.rift-window entry.search-field {
+            min-height: 50px;
+            padding: 0 12px 0 18px;
+            margin: 0;
+            border-radius: 26px;
+            background-color: transparent;
             color: #f5f5f6;
             caret-color: #f5f5f6;
-            border: 1px solid #34343a;
+            border: none;
+            box-shadow: none;
             font-size: 18px;
             font-weight: 400;
             letter-spacing: -0.01em;
@@ -712,10 +1037,44 @@ fn install_css() {
 
         window.rift-window box.spotlight-sheet.expanded entry.search-field {
             min-height: 58px;
-            padding: 0 20px;
+            padding: 0 12px 0 20px;
             border-radius: 0;
+        }
+
+        window.rift-window box.settings-button {
+            min-width: 28px;
+            min-height: 28px;
+            margin-top: 0;
+            margin-bottom: 0;
+            margin-left: 6px;
+            margin-right: 12px;
+            padding: 0;
+            border-radius: 14px;
             background-color: transparent;
             border: none;
+            color: #9a9aa1;
+            transition: background-color 120ms ease, color 120ms ease;
+        }
+
+        window.rift-window box.settings-button.hover {
+            background-color: alpha(#ffffff, 0.08);
+            color: #f3f4f6;
+        }
+
+        window.rift-window box.settings-button.active {
+            background-color: alpha(#ffffff, 0.14);
+            color: #ffffff;
+        }
+
+        window.rift-window box.settings-button image {
+            -gtk-icon-size: 14px;
+            margin: 0;
+            padding: 0;
+            color: inherit;
+        }
+
+        window.rift-window box.spotlight-sheet.expanded box.settings-button {
+            margin-right: 16px;
         }
 
         window.rift-window entry.search-field > image {
@@ -731,13 +1090,16 @@ fn install_css() {
         window.rift-window entry.search-field:focus,
         window.rift-window entry.search-field:focus-within {
             outline: none;
-            background-color: #1f1f22;
+            background-color: transparent;
+            border: none;
+            box-shadow: none;
+        }
+
+        window.rift-window box.search-row:focus-within {
             border: 1px solid #44444c;
         }
 
-        window.rift-window box.spotlight-sheet.expanded entry.search-field:focus,
-        window.rift-window box.spotlight-sheet.expanded entry.search-field:focus-within {
-            background-color: transparent;
+        window.rift-window box.spotlight-sheet.expanded box.search-row:focus-within {
             border: none;
         }
 
@@ -787,6 +1149,84 @@ fn install_css() {
 
         window.rift-window label.result-shortcut {
             color: #77777e;
+        }
+
+        window.rift-settings-window {
+            background-color: #1c1c1f;
+            color: #f4f4f5;
+            border-radius: 12px;
+            border: 1px solid #2e2e33;
+        }
+
+        window.rift-settings-window box.settings-header {
+            margin-bottom: 8px;
+            min-height: 28px;
+        }
+
+        window.rift-settings-window label.settings-title {
+            color: #f4f4f5;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+
+        window.rift-settings-window button.settings-close {
+            min-width: 22px;
+            min-height: 22px;
+            padding: 0;
+            border-radius: 999px;
+            background-color: transparent;
+            border: none;
+            color: #85858c;
+        }
+
+        window.rift-settings-window button.settings-close:hover {
+            background-color: alpha(#ffffff, 0.08);
+            color: #f4f4f5;
+        }
+
+        window.rift-settings-window button.settings-close image {
+            -gtk-icon-size: 12px;
+        }
+
+        window.rift-settings-window box.settings-section {
+            background-color: transparent;
+            border: none;
+            padding: 0;
+        }
+
+        window.rift-settings-window label.settings-section-title {
+            color: #8b8b94;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            margin: 4px 2px 8px 2px;
+        }
+
+        window.rift-settings-window box.settings-group {
+            background-color: #232327;
+            border: 1px solid #2e2e33;
+            border-radius: 8px;
+        }
+
+        window.rift-settings-window box.settings-group > box.settings-row {
+            padding: 10px 14px;
+            min-height: 24px;
+            border-bottom: 1px solid #2e2e33;
+        }
+
+        window.rift-settings-window box.settings-group > box.settings-row:last-child {
+            border-bottom: none;
+        }
+
+        window.rift-settings-window label.settings-row-label {
+            color: #e4e4e7;
+            font-size: 13px;
+        }
+
+        window.rift-settings-window label.settings-row-value {
+            color: #85858c;
+            font-size: 12px;
         }
         "#,
     );
