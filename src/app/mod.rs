@@ -4,10 +4,10 @@ mod settings;
 mod shortcuts;
 mod terminal;
 
-use std::{cell::RefCell, env, rc::Rc};
+use std::{cell::RefCell, env, ffi::OsString, process::Command, rc::Rc};
 
 use adw::prelude::*;
-use gio::ApplicationHoldGuard;
+use gio::{ApplicationFlags, ApplicationHoldGuard};
 use gtk::{Align, Orientation, gdk};
 use gtk4_layer_shell::{
     Edge, KeyboardMode, Layer, LayerShell, is_supported as layer_shell_supported,
@@ -32,6 +32,10 @@ const FADE_FRAME_MS: u64 = 16;
 pub(super) struct LauncherHandles {
     animation_source: Rc<RefCell<Option<glib::SourceId>>>,
     settings_window: Rc<RefCell<Option<gtk::ApplicationWindow>>>,
+    shortcut_task: Rc<RefCell<Option<glib::JoinHandle<()>>>>,
+    shortcut_session: Rc<
+        RefCell<Option<ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>>>,
+    >,
     config: Rc<RefCell<AppConfig>>,
     window: gtk::ApplicationWindow,
     sheet: gtk::Box,
@@ -43,27 +47,113 @@ pub(super) struct LauncherHandles {
     visible_entries: Rc<RefCell<Vec<SearchResult>>>,
 }
 
+pub(super) enum SaveOutcome {
+    Applied,
+    RestartRequired,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CliCommand {
+    Activate,
+    Show,
+    Hide,
+    Toggle,
+    Quit,
+}
+
 pub fn build() -> adw::Application {
     let launcher = Rc::new(RefCell::new(None::<LauncherHandles>));
     let resident_hold = Rc::new(RefCell::new(None::<ApplicationHoldGuard>));
-    let app = adw::Application::builder().application_id(APP_ID).build();
+    let app = adw::Application::builder()
+        .application_id(APP_ID)
+        .flags(ApplicationFlags::HANDLES_COMMAND_LINE)
+        .build();
     app.connect_activate({
         let launcher = launcher.clone();
         let resident_hold = resident_hold.clone();
 
         move |app| {
-            if let Some(handles) = launcher.borrow().as_ref().cloned() {
-                toggle_window(&handles);
-            } else {
-                *resident_hold.borrow_mut() = Some(app.hold());
-                let handles = build_ui(app);
-                warn_if_dev_desktop_entry_missing(app);
-                shortcuts::start_global_shortcut_registration(handles.clone());
-                *launcher.borrow_mut() = Some(handles);
-            }
+            let handles = ensure_launcher(app, &launcher, &resident_hold);
+            toggle_window(&handles);
+        }
+    });
+    app.connect_command_line({
+        let launcher = launcher.clone();
+        let resident_hold = resident_hold.clone();
+
+        move |app, command_line| {
+            let command = parse_cli_command(command_line.arguments());
+            handle_cli_command(app, &launcher, &resident_hold, command);
+            0.into()
         }
     });
     app
+}
+
+fn ensure_launcher(
+    app: &adw::Application,
+    launcher: &Rc<RefCell<Option<LauncherHandles>>>,
+    resident_hold: &Rc<RefCell<Option<ApplicationHoldGuard>>>,
+) -> LauncherHandles {
+    if let Some(handles) = launcher.borrow().as_ref().cloned() {
+        return handles;
+    }
+
+    *resident_hold.borrow_mut() = Some(app.hold());
+    let handles = build_ui(app);
+    warn_if_dev_desktop_entry_missing(app);
+    shortcuts::start_global_shortcut_registration(handles.clone());
+    *launcher.borrow_mut() = Some(handles.clone());
+    handles
+}
+
+fn handle_cli_command(
+    app: &adw::Application,
+    launcher: &Rc<RefCell<Option<LauncherHandles>>>,
+    resident_hold: &Rc<RefCell<Option<ApplicationHoldGuard>>>,
+    command: CliCommand,
+) {
+    match command {
+        CliCommand::Activate | CliCommand::Toggle => {
+            let handles = ensure_launcher(app, launcher, resident_hold);
+            toggle_window(&handles);
+        }
+        CliCommand::Show => {
+            let handles = ensure_launcher(app, launcher, resident_hold);
+            show_window(&handles);
+        }
+        CliCommand::Hide => {
+            if let Some(handles) = launcher.borrow().as_ref().cloned() {
+                dismiss_launcher(&handles);
+            }
+        }
+        CliCommand::Quit => {
+            if let Some(handles) = launcher.borrow().as_ref().cloned() {
+                hide_launcher_now(&handles);
+            }
+            app.quit();
+        }
+    }
+}
+
+fn parse_cli_command(arguments: impl IntoIterator<Item = OsString>) -> CliCommand {
+    let args = arguments
+        .into_iter()
+        .skip(1)
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    if args.iter().any(|arg| arg == "--show") {
+        CliCommand::Show
+    } else if args.iter().any(|arg| arg == "--hide") {
+        CliCommand::Hide
+    } else if args.iter().any(|arg| arg == "--toggle") {
+        CliCommand::Toggle
+    } else if args.iter().any(|arg| arg == "--quit") {
+        CliCommand::Quit
+    } else {
+        CliCommand::Activate
+    }
 }
 
 fn build_ui(app: &adw::Application) -> LauncherHandles {
@@ -72,6 +162,10 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     let index = Rc::new(AppIndex::load());
     let animation_source = Rc::new(RefCell::new(None::<glib::SourceId>));
     let settings_window = Rc::new(RefCell::new(None::<gtk::ApplicationWindow>));
+    let shortcut_task = Rc::new(RefCell::new(None::<glib::JoinHandle<()>>));
+    let shortcut_session = Rc::new(RefCell::new(
+        None::<ashpd::desktop::Session<ashpd::desktop::global_shortcuts::GlobalShortcuts>>,
+    ));
     let visible_entries = Rc::new(RefCell::new(Vec::<SearchResult>::new()));
     let status = gtk::Label::builder()
         .halign(Align::Start)
@@ -198,6 +292,8 @@ fn build_ui(app: &adw::Application) -> LauncherHandles {
     let handles = LauncherHandles {
         animation_source: animation_source.clone(),
         settings_window: settings_window.clone(),
+        shortcut_task: shortcut_task.clone(),
+        shortcut_session: shortcut_session.clone(),
         config: config.clone(),
         window: window.clone(),
         sheet: sheet.clone(),
@@ -419,7 +515,7 @@ fn refresh_results(handles: &LauncherHandles, query: &str) {
     }
 
     for entry in &matches {
-        handles.results.append(&build_row(entry));
+        handles.results.append(&build_row(entry, query));
     }
 
     *handles.visible_entries.borrow_mut() = matches;
@@ -429,7 +525,7 @@ fn refresh_results(handles: &LauncherHandles, query: &str) {
     }
 }
 
-fn build_row(result: &SearchResult) -> gtk::ListBoxRow {
+fn build_row(result: &SearchResult, query: &str) -> gtk::ListBoxRow {
     let icon = if let Some(icon) = result.icon() {
         gtk::Image::builder()
             .gicon(icon)
@@ -441,11 +537,12 @@ fn build_row(result: &SearchResult) -> gtk::ListBoxRow {
     };
 
     let title = gtk::Label::builder()
-        .label(result.title())
         .halign(Align::Start)
         .ellipsize(gtk::pango::EllipsizeMode::End)
         .css_classes(["result-title"])
         .build();
+    title.set_use_markup(true);
+    title.set_markup(&highlight_title_markup(result.title(), query));
 
     let subtitle_text = if result.executable().is_empty() {
         result.subtitle().to_string()
@@ -498,6 +595,15 @@ fn build_row(result: &SearchResult) -> gtk::ListBoxRow {
 pub(super) fn toggle_window(handles: &LauncherHandles) {
     if handles.window.is_visible() {
         dismiss_launcher(handles);
+        return;
+    }
+
+    show_window(handles);
+}
+
+fn show_window(handles: &LauncherHandles) {
+    if handles.window.is_visible() {
+        handles.search_entry.grab_focus();
         return;
     }
 
@@ -559,6 +665,77 @@ fn set_sheet_margins(sheet: &gtk::Box, margin: i32) {
     sheet.set_margin_end(margin);
 }
 
+fn highlight_title_markup(title: &str, query: &str) -> String {
+    let matched_indices = matched_title_indices(title, query);
+    if matched_indices.is_empty() {
+        return glib::markup_escape_text(title).to_string();
+    }
+
+    let mut markup = String::new();
+    for (index, character) in title.chars().enumerate() {
+        let escaped = glib::markup_escape_text(&character.to_string());
+        if matched_indices.contains(&index) {
+            markup.push_str("<span foreground=\"#ffffff\" weight=\"700\">");
+            markup.push_str(&escaped);
+            markup.push_str("</span>");
+        } else {
+            markup.push_str(&escaped);
+        }
+    }
+
+    markup
+}
+
+fn matched_title_indices(title: &str, query: &str) -> Vec<usize> {
+    let query_chars = query
+        .chars()
+        .filter(|character| character.is_alphanumeric())
+        .flat_map(|character| character.to_lowercase())
+        .collect::<Vec<_>>();
+
+    if query_chars.is_empty() {
+        return Vec::new();
+    }
+
+    let mut matched = Vec::new();
+    let mut query_index = 0usize;
+
+    for (index, character) in title.chars().enumerate() {
+        if query_index >= query_chars.len() {
+            break;
+        }
+
+        if !character.is_alphanumeric() {
+            continue;
+        }
+
+        let lower = character.to_lowercase().next().unwrap_or(character);
+        if lower == query_chars[query_index] {
+            matched.push(index);
+            query_index += 1;
+        }
+    }
+
+    if query_index == query_chars.len() {
+        return matched;
+    }
+
+    let lowered_title = title.to_lowercase();
+    let lowered_query = query.trim().to_lowercase();
+    if lowered_query.is_empty() {
+        return Vec::new();
+    }
+
+    lowered_title
+        .find(&lowered_query)
+        .map(|byte_start| {
+            title[..byte_start].chars().count()
+                ..title[..byte_start + lowered_query.len()].chars().count()
+        })
+        .map(|range| range.collect())
+        .unwrap_or_default()
+}
+
 fn warn_if_dev_desktop_entry_missing(app: &adw::Application) {
     if !cfg!(debug_assertions) {
         return;
@@ -580,11 +757,22 @@ pub(super) fn current_config(handles: &LauncherHandles) -> AppConfig {
     handles.config.borrow().clone()
 }
 
-pub(super) fn save_config(handles: &LauncherHandles, config: AppConfig) -> Result<(), String> {
+pub(super) fn save_config(
+    handles: &LauncherHandles,
+    config: AppConfig,
+) -> Result<SaveOutcome, String> {
+    let shortcut_changed =
+        handles.config.borrow().launcher.shortcut_trigger != config.launcher.shortcut_trigger;
     config.save()?;
     *handles.config.borrow_mut() = config;
     apply_runtime_config(handles);
-    Ok(())
+    if shortcut_changed {
+        shortcuts::restart_global_shortcut_registration(handles);
+        if shortcuts::shortcut_change_needs_restart() {
+            return Ok(SaveOutcome::RestartRequired);
+        }
+    }
+    Ok(SaveOutcome::Applied)
 }
 
 pub(super) fn apply_runtime_config(handles: &LauncherHandles) {
@@ -595,4 +783,40 @@ pub(super) fn apply_runtime_config(handles: &LauncherHandles) {
             .set_margin(Edge::Top, runtime.window_top_margin);
     }
     reset_launcher_results(handles);
+}
+
+pub(super) fn restart_application(handles: &LauncherHandles) -> Result<(), String> {
+    let executable = env::current_exe().map_err(|error| error.to_string())?;
+    let args = env::args_os().skip(1).collect::<Vec<_>>();
+    if let Some(task) = handles.shortcut_task.borrow_mut().take() {
+        task.abort();
+    }
+    if let Some(session) = handles.shortcut_session.borrow_mut().take() {
+        glib::MainContext::default().spawn_local(async move {
+            let _ = session.close().await;
+        });
+    }
+    animation::cancel_animation(handles);
+    handles.window.hide();
+
+    Command::new("sh")
+        .arg("-lc")
+        .arg("sleep 0.35; exec \"$@\"")
+        .arg("rift-relaunch")
+        .arg(&executable)
+        .args(&args)
+        .spawn()
+        .map_err(|error| error.to_string())?;
+
+    if let Some(app) = handles.window.application() {
+        app.quit();
+    } else {
+        handles.window.close();
+    }
+
+    glib::timeout_add_local_once(std::time::Duration::from_millis(800), || {
+        std::process::exit(0);
+    });
+
+    Ok(())
 }

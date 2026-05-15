@@ -191,13 +191,13 @@ pub(super) fn install_css() {
         window.rift-settings-window {
             background-color: #1c1c1f;
             color: #f4f4f5;
-            border-radius: 12px;
+            border-radius: 14px;
             border: 1px solid #2e2e33;
         }
 
         window.rift-settings-window box.settings-header {
-            margin-bottom: 8px;
-            min-height: 28px;
+            margin-bottom: 6px;
+            min-height: 30px;
         }
 
         window.rift-settings-window label.settings-title {
@@ -226,6 +226,44 @@ pub(super) fn install_css() {
             -gtk-icon-size: 12px;
         }
 
+        window.rift-settings-window box.settings-banner {
+            background-color: alpha(#5b8bd6, 0.12);
+            border: 1px solid alpha(#5b8bd6, 0.32);
+            border-radius: 8px;
+            padding: 9px 12px;
+            color: #cfdcef;
+        }
+
+        window.rift-settings-window box.settings-banner.error {
+            background-color: alpha(#e07b9b, 0.12);
+            border-color: alpha(#e07b9b, 0.4);
+            color: #f3c2d0;
+        }
+
+        window.rift-settings-window box.settings-banner image {
+            color: inherit;
+        }
+
+        window.rift-settings-window label.settings-banner-text {
+            font-size: 12px;
+            color: inherit;
+        }
+
+        window.rift-settings-window button.settings-banner-action {
+            min-height: 24px;
+            padding: 0 10px;
+            border-radius: 6px;
+            background-color: alpha(#ffffff, 0.06);
+            border: 1px solid alpha(#ffffff, 0.10);
+            color: #e4e4e7;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        window.rift-settings-window button.settings-banner-action:hover {
+            background-color: alpha(#ffffff, 0.12);
+        }
+
         window.rift-settings-window box.settings-section {
             background-color: transparent;
             border: none;
@@ -235,20 +273,21 @@ pub(super) fn install_css() {
         window.rift-settings-window label.settings-section-title {
             color: #8b8b94;
             font-size: 11px;
-            font-weight: 500;
-            letter-spacing: 0.04em;
-            margin: 4px 2px 8px 2px;
+            font-weight: 600;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin: 0 2px 8px 2px;
         }
 
         window.rift-settings-window box.settings-group {
             background-color: #232327;
             border: 1px solid #2e2e33;
-            border-radius: 8px;
+            border-radius: 10px;
         }
 
         window.rift-settings-window box.settings-group > box.settings-row {
-            padding: 10px 14px;
-            min-height: 24px;
+            padding: 12px 14px;
+            min-height: 34px;
             border-bottom: 1px solid #2e2e33;
         }
 
@@ -257,49 +296,141 @@ pub(super) fn install_css() {
         }
 
         window.rift-settings-window label.settings-row-label {
-            color: #e4e4e7;
+            color: #ececf0;
             font-size: 13px;
         }
 
-        window.rift-settings-window label.settings-row-value {
+        window.rift-settings-window label.settings-row-helper {
             color: #85858c;
-            font-size: 12px;
+            font-size: 11px;
         }
 
-        window.rift-settings-window entry.settings-entry,
         window.rift-settings-window spinbutton.settings-spin {
-            min-height: 34px;
-            min-width: 120px;
-            padding: 0 10px;
-            border-radius: 8px;
+            min-height: 28px;
+            min-width: 84px;
+            padding: 0;
+            border-radius: 7px;
             background-color: #161619;
             border: 1px solid #34343a;
+            color: #f4f4f5;
+            font-size: 13px;
+        }
+
+        window.rift-settings-window spinbutton.settings-spin text {
+            background-color: transparent;
+            color: inherit;
+            min-height: 26px;
+            padding: 0 6px;
+        }
+
+        window.rift-settings-window spinbutton.settings-spin button {
+            min-height: 26px;
+            min-width: 20px;
+            padding: 0;
+            background-color: transparent;
+            border: none;
+            color: #9a9aa1;
+        }
+
+        window.rift-settings-window spinbutton.settings-spin button:hover {
+            background-color: alpha(#ffffff, 0.06);
+            color: #f4f4f5;
+        }
+
+        window.rift-settings-window button.settings-shortcut-button {
+            min-height: 28px;
+            min-width: 120px;
+            padding: 0 12px;
+            border-radius: 7px;
+            background-color: #161619;
+            border: 1px solid #34343a;
+            color: #e4e4e7;
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+        }
+
+        window.rift-settings-window button.settings-shortcut-button:hover {
+            background-color: #1a1a1e;
+            border-color: #44444c;
             color: #f4f4f5;
         }
 
         window.rift-settings-window switch {
-            margin: 2px 0;
+            margin: 0;
+            min-width: 36px;
+            min-height: 20px;
         }
 
-        window.rift-settings-window label.settings-note,
-        window.rift-settings-window label.settings-feedback {
-            color: #8b8b94;
-            font-size: 12px;
-        }
-
-        window.rift-settings-window label.settings-feedback.error {
-            color: #f38ba8;
-        }
-
-        window.rift-settings-window box.settings-actions {
+        window.rift-settings-window box.settings-footer-box {
             margin-top: 4px;
         }
 
-        window.rift-settings-window button.settings-secondary-button,
-        window.rift-settings-window button.settings-primary-button {
-            min-height: 36px;
-            padding: 0 14px;
+        window.rift-settings-window label.settings-footer {
+            color: #6a6a72;
+            font-size: 11px;
+            letter-spacing: 0.02em;
+        }
+
+        window.rift-shortcut-capture {
+            background-color: #1c1c1f;
+            color: #f4f4f5;
+            border-radius: 14px;
+            border: 1px solid #2e2e33;
+        }
+
+        window.rift-shortcut-capture box.settings-capture-box {
+            background-color: transparent;
+        }
+
+        window.rift-shortcut-capture label.settings-capture-title {
+            color: #f4f4f5;
+            font-size: 15px;
+            font-weight: 600;
+            letter-spacing: -0.01em;
+        }
+
+        window.rift-shortcut-capture label.settings-capture-hint {
+            color: #85858c;
+            font-size: 12px;
+        }
+
+        window.rift-shortcut-capture box.settings-capture-keycap {
+            background-color: #161619;
+            border: 1px solid #34343a;
             border-radius: 10px;
+            padding: 14px 22px;
+            margin: 4px 0;
+            min-height: 44px;
+        }
+
+        window.rift-shortcut-capture label.settings-capture-value {
+            color: #f4f4f5;
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }
+
+        window.rift-shortcut-capture box.settings-capture-actions {
+            margin-top: 6px;
+        }
+
+        window.rift-shortcut-capture button.settings-capture-cancel,
+        window.rift-shortcut-capture button.settings-capture-confirm {
+            min-height: 30px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        window.rift-shortcut-capture button.settings-capture-cancel {
+            background-color: #232327;
+            border: 1px solid #34343a;
+            color: #e4e4e7;
+        }
+
+        window.rift-shortcut-capture button.settings-capture-cancel:hover {
+            background-color: #2a2a2f;
         }
         "#,
     );

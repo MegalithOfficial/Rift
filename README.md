@@ -45,6 +45,17 @@ cargo build
 setsid nohup ./target/debug/rift >/tmp/rift.log 2>&1 < /dev/null &
 ```
 
+Rift also exposes command targets for desktop-specific custom shortcut systems:
+
+```bash
+./target/debug/rift --show
+./target/debug/rift --hide
+./target/debug/rift --toggle
+./target/debug/rift --quit
+```
+
+Those commands target the resident instance, so they can be used as a fallback on desktops where the GlobalShortcuts portal is missing or incomplete.
+
 ## Global Shortcut Setup
 
 In development, the portal needs a desktop entry for `dev.rift.launcher`. Build once, then install the local desktop entry:
@@ -73,7 +84,6 @@ Rift currently requests `Ctrl+Space` as the preferred summon shortcut. GNOME may
 ## Known Limitations
 
 - No file or folder provider yet.
-- No configurable shortcut UI yet.
 - No packaged install target yet.
 - The calculator uses `meval`, which currently pulls an old `nom` version that emits a future-compat warning.
 - Global shortcuts depend on the desktop portal implementation.
