@@ -26,6 +26,8 @@ pub struct RuntimeConfig {
 pub struct AppConfig {
     #[serde(default = "default_config_version")]
     pub config_version: u32,
+    #[serde(default = "default_false")]
+    pub welcomed: bool,
     #[serde(default)]
     pub launcher: LauncherConfig,
     #[serde(default)]
@@ -92,6 +94,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             config_version: CONFIG_VERSION,
+            welcomed: false,
             launcher: LauncherConfig::default(),
             providers: ProviderConfig::default(),
             theme: ThemeConfig::default(),

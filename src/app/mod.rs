@@ -3,6 +3,7 @@ pub(crate) mod css;
 mod settings;
 mod shortcuts;
 mod terminal;
+mod welcome;
 
 use std::{cell::RefCell, env, ffi::OsString, process::Command, rc::Rc};
 
@@ -60,6 +61,7 @@ enum CliCommand {
     Show,
     Hide,
     Toggle,
+    Welcome,
     Quit,
 }
 
@@ -108,6 +110,12 @@ fn ensure_launcher(
     let _ = sync_launch_at_login(current_config(&handles).launcher.launch_at_login);
     shortcuts::start_global_shortcut_registration(handles.clone());
     *launcher.borrow_mut() = Some(handles.clone());
+
+    if welcome::show_if_first_run(app, &handles) {
+        // First-run: hide the launcher so the welcome window owns the screen.
+        hide_launcher_now(&handles);
+    }
+
     handles
 }
 
@@ -140,6 +148,11 @@ fn handle_cli_command(
             }
             app.quit();
         }
+        CliCommand::Welcome => {
+            let handles = ensure_launcher(app, launcher, resident_hold, false);
+            hide_launcher_now(&handles);
+            welcome::present_now(app, &handles);
+        }
     }
 }
 
@@ -150,7 +163,9 @@ fn parse_cli_command(arguments: impl IntoIterator<Item = OsString>) -> CliComman
         .map(|arg| arg.to_string_lossy().into_owned())
         .collect::<Vec<_>>();
 
-    if args.iter().any(|arg| arg == "--show") {
+    if args.iter().any(|arg| arg == "--welcome") {
+        CliCommand::Welcome
+    } else if args.iter().any(|arg| arg == "--show") {
         CliCommand::Show
     } else if args.iter().any(|arg| arg == "--background") {
         CliCommand::Background
