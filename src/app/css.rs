@@ -419,46 +419,51 @@ window.rift-settings-window label.settings-shortcut-card-hint {
     line-height: 1.4;
 }
 
-window.rift-settings-window box.settings-shortcut-card-list {
-    margin-top: 2px;
-}
-
-window.rift-settings-window box.settings-shortcut-command-row {
-    padding: 8px 4px;
-    border-top: 1px solid alpha(#ffffff, 0.05);
-}
-
-window.rift-settings-window box.settings-shortcut-card-list > box.settings-shortcut-command-row:first-child {
-    border-top: none;
-    padding-top: 6px;
+window.rift-settings-window box.settings-shortcut-command-card {
+    background-color: alpha(#ffffff, 0.04);
+    border: 1px solid alpha(#ffffff, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
 }
 
 window.rift-settings-window label.settings-shortcut-command {
     color: #f4f4f5;
     font-family: "JetBrains Mono", "Fira Code", monospace;
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 500;
-    background-color: alpha(#ffffff, 0.05);
-    border: 1px solid alpha(#ffffff, 0.06);
-    border-radius: 5px;
-    padding: 2px 8px;
+    background-color: transparent;
+    border: none;
+    padding: 0;
 }
 
-window.rift-settings-window label.settings-shortcut-command-desc {
+window.rift-settings-window box.settings-shortcut-steps {
+    margin-top: 2px;
+}
+
+window.rift-settings-window box.settings-shortcut-step-row {
+    padding: 2px 0;
+}
+
+window.rift-settings-window label.settings-shortcut-step-number {
+    color: #f4f4f5;
+    background-color: alpha(#ffffff, 0.10);
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 0;
+    margin-top: 1px;
+}
+
+window.rift-settings-window label.settings-shortcut-step-title {
+    color: #ececf0;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+window.rift-settings-window label.settings-shortcut-step-body {
     color: #85858c;
     font-size: 11px;
-}
-
-window.rift-settings-window label.settings-shortcut-badge {
-    color: #b9e0c8;
-    background-color: alpha(#62c089, 0.14);
-    border: 1px solid alpha(#62c089, 0.32);
-    border-radius: 999px;
-    padding: 1px 8px;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
+    line-height: 1.45;
 }
 
 window.rift-settings-window button.settings-shortcut-copy {

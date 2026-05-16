@@ -984,9 +984,8 @@ fn wrap_section(title: &str, body: gtk::Widget) -> gtk::Box {
 fn build_shortcut_setup_card() -> gtk::Box {
     let hint = gtk::Label::builder()
         .label(
-            "Rift must be running in the background before these commands can control it. \
-             Enable Launch at login or start it manually with `rift --background`, then bind a key \
-             in your desktop's keyboard settings. Rift won't capture global keys itself.",
+            "Bind a key in your desktop's keyboard settings to the command below. \
+             Rift won't capture global keys itself.",
         )
         .halign(Align::Start)
         .wrap(true)
@@ -994,76 +993,53 @@ fn build_shortcut_setup_card() -> gtk::Box {
         .css_classes(["settings-shortcut-card-hint"])
         .build();
 
-    let list = gtk::Box::builder()
+    let command_card = build_shortcut_command_card("rift --toggle", "Copy command");
+
+    let steps = gtk::Box::builder()
         .orientation(Orientation::Vertical)
-        .css_classes(["settings-shortcut-card-list"])
+        .spacing(8)
+        .css_classes(["settings-shortcut-steps"])
         .build();
-    for (command, description, badge) in [
-        (
-            "rift --background",
-            "Start Rift in the background",
-            Some("run first"),
-        ),
-        ("rift --toggle", "Toggle visibility", Some("recommended")),
-        ("rift --show", "Open the launcher", None),
-        ("rift --hide", "Close the launcher", None),
-        ("rift --quit", "Stop the background process", None),
-    ] {
-        list.append(&shortcut_command_row(command, description, badge));
-    }
+    steps.append(&shortcut_step_row(
+        "1",
+        "Run Rift in the background",
+        "Enable \"Launch at login\" below, or start it manually with `rift --background`.",
+    ));
+    steps.append(&shortcut_step_row(
+        "2",
+        "Open keyboard settings",
+        "GNOME: Settings → Keyboard → Custom Shortcuts. KDE: System Settings → Shortcuts → Add Command. \
+         Hyprland / Sway: edit your config.",
+    ));
+    steps.append(&shortcut_step_row(
+        "3",
+        "Bind a key",
+        "Paste the command, then assign a hotkey (Super+Space, Ctrl+Space).",
+    ));
 
     let card = gtk::Box::builder()
         .orientation(Orientation::Vertical)
-        .spacing(10)
+        .spacing(12)
         .css_classes(["settings-shortcut-card"])
         .build();
     card.append(&hint);
-    card.append(&list);
+    card.append(&command_card);
+    card.append(&steps);
     card
 }
 
-fn shortcut_command_row(command: &str, description: &str, badge: Option<&str>) -> gtk::Box {
+fn build_shortcut_command_card(command: &str, tooltip: &str) -> gtk::Box {
     let cmd_label = gtk::Label::builder()
         .label(command)
         .halign(Align::Start)
+        .hexpand(true)
         .selectable(true)
         .css_classes(["settings-shortcut-command"])
         .build();
 
-    let desc_label = gtk::Label::builder()
-        .label(description)
-        .halign(Align::Start)
-        .hexpand(true)
-        .css_classes(["settings-shortcut-command-desc"])
-        .build();
-
-    let text_column = gtk::Box::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(2)
-        .hexpand(true)
-        .valign(Align::Center)
-        .build();
-
-    let header = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(8)
-        .build();
-    header.append(&cmd_label);
-    if let Some(badge_text) = badge {
-        let badge_label = gtk::Label::builder()
-            .label(badge_text)
-            .halign(Align::Start)
-            .valign(Align::Center)
-            .css_classes(["settings-shortcut-badge"])
-            .build();
-        header.append(&badge_label);
-    }
-    text_column.append(&header);
-    text_column.append(&desc_label);
-
     let copy_button = gtk::Button::builder()
         .icon_name("edit-copy-symbolic")
-        .tooltip_text("Copy command")
+        .tooltip_text(tooltip)
         .valign(Align::Center)
         .css_classes(["flat", "settings-shortcut-copy"])
         .build();
@@ -1076,11 +1052,51 @@ fn shortcut_command_row(command: &str, description: &str, badge: Option<&str>) -
 
     let row = gtk::Box::builder()
         .orientation(Orientation::Horizontal)
-        .spacing(12)
-        .css_classes(["settings-shortcut-command-row"])
+        .spacing(10)
+        .css_classes(["settings-shortcut-command-card"])
         .build();
-    row.append(&text_column);
+    row.append(&cmd_label);
     row.append(&copy_button);
+    row
+}
+
+fn shortcut_step_row(number: &str, title: &str, body: &str) -> gtk::Box {
+    let number_label = gtk::Label::builder()
+        .label(number)
+        .halign(Align::Center)
+        .valign(Align::Start)
+        .width_request(22)
+        .height_request(22)
+        .css_classes(["settings-shortcut-step-number"])
+        .build();
+
+    let title_label = gtk::Label::builder()
+        .label(title)
+        .halign(Align::Start)
+        .css_classes(["settings-shortcut-step-title"])
+        .build();
+    let body_label = gtk::Label::builder()
+        .label(body)
+        .halign(Align::Start)
+        .wrap(true)
+        .xalign(0.0)
+        .css_classes(["settings-shortcut-step-body"])
+        .build();
+    let text = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(1)
+        .hexpand(true)
+        .build();
+    text.append(&title_label);
+    text.append(&body_label);
+
+    let row = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(10)
+        .css_classes(["settings-shortcut-step-row"])
+        .build();
+    row.append(&number_label);
+    row.append(&text);
     row
 }
 
