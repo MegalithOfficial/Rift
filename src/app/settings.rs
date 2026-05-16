@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use adw::prelude::*;
 use gtk::{Align, Orientation, gdk};
@@ -94,11 +94,7 @@ fn build_settings_window(
     });
 
     // --- Launcher controls --------------------------------------------------
-    let shortcut_button = gtk::Button::builder()
-        .label(&config.launcher.shortcut_trigger)
-        .css_classes(["settings-shortcut-button"])
-        .build();
-    shortcut_button.set_widget_name("shortcut");
+    let shortcut_setup_card = build_shortcut_setup_card();
 
     let results_adjustment = gtk::Adjustment::new(
         config.launcher.max_visible_results as f64,
@@ -191,7 +187,9 @@ fn build_settings_window(
         .build();
 
     let theme_meta_label = gtk::Label::builder()
-        .label(theme_meta_text(theme_entries.borrow().get(initial_index as usize)))
+        .label(theme_meta_text(
+            theme_entries.borrow().get(initial_index as usize),
+        ))
         .halign(Align::Start)
         .wrap(true)
         .xalign(0.0)
@@ -235,14 +233,13 @@ fn build_settings_window(
 
     // --- Section panels (stacked) ------------------------------------------
     let launcher_panel = panel(&[
+        wrap_section(
+            "Shortcut setup",
+            shortcut_setup_card.clone().upcast::<gtk::Widget>(),
+        ),
         section(
             "General",
             group(&[
-                labeled_row(
-                    "Global shortcut",
-                    Some("Triggers the launcher anywhere."),
-                    shortcut_button.clone().upcast::<gtk::Widget>(),
-                ),
                 labeled_row(
                     "Visible results",
                     Some("Maximum items shown without scrolling."),
@@ -318,12 +315,12 @@ fn build_settings_window(
         .css_classes(["settings-sidebar"])
         .build();
     sidebar.append(&sidebar_row("Launcher", "edit-find-symbolic", "launcher"));
+    sidebar.append(&sidebar_row("Providers", "view-grid-symbolic", "providers"));
     sidebar.append(&sidebar_row(
-        "Providers",
-        "view-grid-symbolic",
-        "providers",
+        "Theme",
+        "applications-graphics-symbolic",
+        "theme",
     ));
-    sidebar.append(&sidebar_row("Theme", "applications-graphics-symbolic", "theme"));
     sidebar.select_row(sidebar.row_at_index(0).as_ref());
 
     sidebar.connect_row_selected({
@@ -493,16 +490,6 @@ fn build_settings_window(
         }
     });
 
-    shortcut_button.connect_clicked({
-        let window = window.clone();
-        let handles = handles.clone();
-        let banner = banner_state.clone();
-        let button = shortcut_button.clone();
-        move |_| {
-            present_shortcut_capture(&window, &button, &handles, &banner);
-        }
-    });
-
     theme_dropdown.connect_selected_notify({
         let handles = handles.clone();
         let banner = banner_state.clone();
@@ -597,7 +584,10 @@ fn build_settings_window(
                     result.clone(),
                 );
                 match result {
-                    Ok(_) => banner.show_info(&format!("\u{201c}{}\u{201d} looks good.", entry.manifest.name)),
+                    Ok(_) => banner.show_info(&format!(
+                        "\u{201c}{}\u{201d} looks good.",
+                        entry.manifest.name
+                    )),
                     Err(err) => banner.show_error(&err),
                 }
             }
@@ -609,10 +599,9 @@ fn build_settings_window(
         move |_| {
             let path = theme::themes_dir_path();
             let uri = format!("file://{}", path.display());
-            if let Err(error) = gio::AppInfo::launch_default_for_uri(
-                &uri,
-                None::<&gio::AppLaunchContext>,
-            ) {
+            if let Err(error) =
+                gio::AppInfo::launch_default_for_uri(&uri, None::<&gio::AppLaunchContext>)
+            {
                 banner.show_error(&error.to_string());
             }
         }
@@ -975,6 +964,126 @@ fn section(title: &str, group: gtk::Box) -> gtk::Box {
     section
 }
 
+fn wrap_section(title: &str, body: gtk::Widget) -> gtk::Box {
+    let heading = gtk::Label::builder()
+        .label(title)
+        .halign(Align::Start)
+        .css_classes(["settings-section-title"])
+        .build();
+
+    let section = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(0)
+        .css_classes(["settings-section"])
+        .build();
+    section.append(&heading);
+    section.append(&body);
+    section
+}
+
+fn build_shortcut_setup_card() -> gtk::Box {
+    let hint = gtk::Label::builder()
+        .label(
+            "Rift must be running in the background before these commands can control it. \
+             Enable Launch at login or start it manually with `rift --background`, then bind a key \
+             in your desktop's keyboard settings. Rift won't capture global keys itself.",
+        )
+        .halign(Align::Start)
+        .wrap(true)
+        .xalign(0.0)
+        .css_classes(["settings-shortcut-card-hint"])
+        .build();
+
+    let list = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .css_classes(["settings-shortcut-card-list"])
+        .build();
+    for (command, description, badge) in [
+        (
+            "rift --background",
+            "Start Rift in the background",
+            Some("run first"),
+        ),
+        ("rift --toggle", "Toggle visibility", Some("recommended")),
+        ("rift --show", "Open the launcher", None),
+        ("rift --hide", "Close the launcher", None),
+        ("rift --quit", "Stop the background process", None),
+    ] {
+        list.append(&shortcut_command_row(command, description, badge));
+    }
+
+    let card = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(10)
+        .css_classes(["settings-shortcut-card"])
+        .build();
+    card.append(&hint);
+    card.append(&list);
+    card
+}
+
+fn shortcut_command_row(command: &str, description: &str, badge: Option<&str>) -> gtk::Box {
+    let cmd_label = gtk::Label::builder()
+        .label(command)
+        .halign(Align::Start)
+        .selectable(true)
+        .css_classes(["settings-shortcut-command"])
+        .build();
+
+    let desc_label = gtk::Label::builder()
+        .label(description)
+        .halign(Align::Start)
+        .hexpand(true)
+        .css_classes(["settings-shortcut-command-desc"])
+        .build();
+
+    let text_column = gtk::Box::builder()
+        .orientation(Orientation::Vertical)
+        .spacing(2)
+        .hexpand(true)
+        .valign(Align::Center)
+        .build();
+
+    let header = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(8)
+        .build();
+    header.append(&cmd_label);
+    if let Some(badge_text) = badge {
+        let badge_label = gtk::Label::builder()
+            .label(badge_text)
+            .halign(Align::Start)
+            .valign(Align::Center)
+            .css_classes(["settings-shortcut-badge"])
+            .build();
+        header.append(&badge_label);
+    }
+    text_column.append(&header);
+    text_column.append(&desc_label);
+
+    let copy_button = gtk::Button::builder()
+        .icon_name("edit-copy-symbolic")
+        .tooltip_text("Copy command")
+        .valign(Align::Center)
+        .css_classes(["flat", "settings-shortcut-copy"])
+        .build();
+    let to_copy = command.to_string();
+    copy_button.connect_clicked(move |_| {
+        if let Some(display) = gdk::Display::default() {
+            display.clipboard().set_text(&to_copy);
+        }
+    });
+
+    let row = gtk::Box::builder()
+        .orientation(Orientation::Horizontal)
+        .spacing(12)
+        .css_classes(["settings-shortcut-command-row"])
+        .build();
+    row.append(&text_column);
+    row.append(&copy_button);
+    row
+}
+
 fn group(rows: &[gtk::Box]) -> gtk::Box {
     let group = gtk::Box::builder()
         .orientation(Orientation::Vertical)
@@ -1038,247 +1147,4 @@ fn build_footer() -> gtk::Box {
         .build();
     footer.append(&version);
     footer
-}
-
-fn present_shortcut_capture(
-    parent: &gtk::ApplicationWindow,
-    target_button: &gtk::Button,
-    handles: &LauncherHandles,
-    banner: &SettingsBanner,
-) {
-    let title = gtk::Label::builder()
-        .label("Set Shortcut")
-        .halign(Align::Center)
-        .css_classes(["settings-capture-title"])
-        .build();
-    let hint = gtk::Label::builder()
-        .label("Hold modifiers and press a key. Esc to cancel.")
-        .halign(Align::Center)
-        .wrap(true)
-        .justify(gtk::Justification::Center)
-        .css_classes(["settings-capture-hint"])
-        .build();
-    let value = gtk::Label::builder()
-        .label("Listening…")
-        .halign(Align::Center)
-        .css_classes(["settings-capture-value"])
-        .build();
-
-    let value_frame = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .halign(Align::Center)
-        .css_classes(["settings-capture-keycap"])
-        .build();
-    value_frame.append(&value);
-
-    let content = gtk::Box::builder()
-        .orientation(Orientation::Vertical)
-        .spacing(14)
-        .margin_top(24)
-        .margin_bottom(20)
-        .margin_start(24)
-        .margin_end(24)
-        .css_classes(["settings-capture-box"])
-        .build();
-    content.append(&title);
-    content.append(&hint);
-    content.append(&value_frame);
-
-    let actions = gtk::Box::builder()
-        .orientation(Orientation::Horizontal)
-        .spacing(10)
-        .halign(Align::Fill)
-        .homogeneous(true)
-        .css_classes(["settings-capture-actions"])
-        .build();
-    let cancel_button = gtk::Button::builder()
-        .label("Cancel")
-        .css_classes(["settings-capture-cancel"])
-        .build();
-    let confirm_button = gtk::Button::builder()
-        .label("Set Shortcut")
-        .sensitive(false)
-        .css_classes(["suggested-action", "settings-capture-confirm"])
-        .build();
-    actions.append(&cancel_button);
-    actions.append(&confirm_button);
-    content.append(&actions);
-
-    let dialog = gtk::Window::builder()
-        .title("Capture Shortcut")
-        .transient_for(parent)
-        .modal(true)
-        .decorated(false)
-        .resizable(false)
-        .default_width(340)
-        .default_height(220)
-        .child(&content)
-        .build();
-    dialog.add_css_class("rift-shortcut-capture");
-
-    let pressed_keys = Rc::new(RefCell::new(HashSet::<u32>::new()));
-    let draft = Rc::new(RefCell::new(ShortcutDraft::default()));
-
-    let key_controller = gtk::EventControllerKey::new();
-    key_controller.set_propagation_phase(gtk::PropagationPhase::Capture);
-    key_controller.connect_key_pressed({
-        let dialog = dialog.clone();
-        let value = value.clone();
-        let confirm_button = confirm_button.clone();
-        let pressed_keys = pressed_keys.clone();
-        let draft = draft.clone();
-
-        move |_, key, keycode, state| {
-            if key == gdk::Key::Escape {
-                dialog.close();
-                return true.into();
-            }
-
-            if !pressed_keys.borrow_mut().insert(keycode) {
-                return true.into();
-            }
-
-            {
-                let mut draft = draft.borrow_mut();
-                draft.ctrl = state.contains(gdk::ModifierType::CONTROL_MASK)
-                    || matches!(key, gdk::Key::Control_L | gdk::Key::Control_R);
-                draft.alt = state.contains(gdk::ModifierType::ALT_MASK)
-                    || matches!(key, gdk::Key::Alt_L | gdk::Key::Alt_R);
-                draft.shift = state.contains(gdk::ModifierType::SHIFT_MASK)
-                    || matches!(key, gdk::Key::Shift_L | gdk::Key::Shift_R);
-                draft.super_key = state.contains(gdk::ModifierType::SUPER_MASK)
-                    || matches!(
-                        key,
-                        gdk::Key::Super_L | gdk::Key::Super_R | gdk::Key::Meta_L | gdk::Key::Meta_R
-                    );
-
-                if !is_modifier_key(key) {
-                    draft.primary = format_key_name(key);
-                }
-            }
-
-            let display = draft.borrow().display();
-            value.set_label(if display.is_empty() {
-                "Listening…"
-            } else {
-                &display
-            });
-            confirm_button.set_sensitive(draft.borrow().is_complete());
-
-            true.into()
-        }
-    });
-    key_controller.connect_key_released({
-        let pressed_keys = pressed_keys.clone();
-        let value = value.clone();
-        let confirm_button = confirm_button.clone();
-        let draft = draft.clone();
-
-        move |_, key, keycode, state| {
-            pressed_keys.borrow_mut().remove(&keycode);
-            if is_modifier_key(key) && draft.borrow().primary.is_none() {
-                let mut draft = draft.borrow_mut();
-                draft.ctrl = state.contains(gdk::ModifierType::CONTROL_MASK);
-                draft.alt = state.contains(gdk::ModifierType::ALT_MASK);
-                draft.shift = state.contains(gdk::ModifierType::SHIFT_MASK);
-                draft.super_key = state.contains(gdk::ModifierType::SUPER_MASK);
-                let display = draft.display();
-                value.set_label(if display.is_empty() {
-                    "Listening…"
-                } else {
-                    &display
-                });
-                confirm_button.set_sensitive(draft.is_complete());
-            }
-        }
-    });
-    dialog.add_controller(key_controller);
-
-    cancel_button.connect_clicked({
-        let dialog = dialog.clone();
-        move |_| dialog.close()
-    });
-
-    confirm_button.connect_clicked({
-        let dialog = dialog.clone();
-        let target_button = target_button.clone();
-        let draft = draft.clone();
-        let handles = handles.clone();
-        let banner = banner.clone();
-        move |_| {
-            let display = draft.borrow().display();
-            if !display.is_empty() {
-                target_button.set_label(&display);
-                let next_shortcut = display.clone();
-                apply_change(&handles, &banner, |config| {
-                    config.launcher.shortcut_trigger = next_shortcut;
-                });
-            }
-            dialog.close();
-        }
-    });
-
-    dialog.present();
-}
-
-#[derive(Default)]
-struct ShortcutDraft {
-    ctrl: bool,
-    alt: bool,
-    shift: bool,
-    super_key: bool,
-    primary: Option<String>,
-}
-
-impl ShortcutDraft {
-    fn display(&self) -> String {
-        let mut parts = Vec::new();
-
-        if self.ctrl {
-            parts.push("CTRL".to_string());
-        }
-        if self.alt {
-            parts.push("ALT".to_string());
-        }
-        if self.shift {
-            parts.push("SHIFT".to_string());
-        }
-        if self.super_key {
-            parts.push("SUPER".to_string());
-        }
-        if let Some(primary) = &self.primary {
-            parts.push(primary.clone());
-        }
-
-        parts.join("+")
-    }
-
-    fn is_complete(&self) -> bool {
-        self.primary.is_some()
-    }
-}
-
-fn format_key_name(key: gdk::Key) -> Option<String> {
-    let name = key.name()?;
-    if name.chars().count() == 1 {
-        return Some(name.to_ascii_uppercase());
-    }
-
-    Some(name.to_ascii_lowercase())
-}
-
-fn is_modifier_key(key: gdk::Key) -> bool {
-    matches!(
-        key,
-        gdk::Key::Shift_L
-            | gdk::Key::Shift_R
-            | gdk::Key::Control_L
-            | gdk::Key::Control_R
-            | gdk::Key::Alt_L
-            | gdk::Key::Alt_R
-            | gdk::Key::Meta_L
-            | gdk::Key::Meta_R
-            | gdk::Key::Super_L
-            | gdk::Key::Super_R
-    )
 }

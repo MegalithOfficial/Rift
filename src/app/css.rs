@@ -399,23 +399,85 @@ window.rift-settings-window spinbutton.settings-spin button:hover {
     color: #f4f4f5;
 }
 
-window.rift-settings-window button.settings-shortcut-button {
-    min-height: 28px;
-    min-width: 120px;
-    padding: 0 12px;
-    border-radius: 7px;
-    background-color: #161619;
-    border: 1px solid #34343a;
-    color: #e4e4e7;
-    font-size: 12px;
-    font-weight: 500;
-    letter-spacing: 0.02em;
+window.rift-settings-window label.settings-info-block {
+    color: #d6d8df;
+    font-size: 11px;
+    line-height: 1.45;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
-window.rift-settings-window button.settings-shortcut-button:hover {
-    background-color: #1a1a1e;
-    border-color: #44444c;
+window.rift-settings-window box.settings-shortcut-card {
+    background-color: #232327;
+    border: 1px solid #2e2e33;
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+
+window.rift-settings-window label.settings-shortcut-card-hint {
+    color: #a4a4ac;
+    font-size: 12px;
+    line-height: 1.4;
+}
+
+window.rift-settings-window box.settings-shortcut-card-list {
+    margin-top: 2px;
+}
+
+window.rift-settings-window box.settings-shortcut-command-row {
+    padding: 8px 4px;
+    border-top: 1px solid alpha(#ffffff, 0.05);
+}
+
+window.rift-settings-window box.settings-shortcut-card-list > box.settings-shortcut-command-row:first-child {
+    border-top: none;
+    padding-top: 6px;
+}
+
+window.rift-settings-window label.settings-shortcut-command {
     color: #f4f4f5;
+    font-family: "JetBrains Mono", "Fira Code", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    background-color: alpha(#ffffff, 0.05);
+    border: 1px solid alpha(#ffffff, 0.06);
+    border-radius: 5px;
+    padding: 2px 8px;
+}
+
+window.rift-settings-window label.settings-shortcut-command-desc {
+    color: #85858c;
+    font-size: 11px;
+}
+
+window.rift-settings-window label.settings-shortcut-badge {
+    color: #b9e0c8;
+    background-color: alpha(#62c089, 0.14);
+    border: 1px solid alpha(#62c089, 0.32);
+    border-radius: 999px;
+    padding: 1px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+window.rift-settings-window button.settings-shortcut-copy {
+    min-width: 26px;
+    min-height: 26px;
+    padding: 0;
+    border-radius: 6px;
+    background-color: transparent;
+    border: none;
+    color: #9a9aa1;
+}
+
+window.rift-settings-window button.settings-shortcut-copy:hover {
+    background-color: alpha(#ffffff, 0.08);
+    color: #f4f4f5;
+}
+
+window.rift-settings-window button.settings-shortcut-copy image {
+    -gtk-icon-size: 12px;
 }
 
 window.rift-settings-window switch {
@@ -607,76 +669,12 @@ window.rift-settings-window label.settings-action-button-label {
 }
 "#;
 
-const SHORTCUT_CAPTURE_CSS: &str = r#"
-window.rift-shortcut-capture {
-    background-color: alpha(#18181c, 0.92);
-    color: #f4f4f5;
-    border-radius: 14px;
-    border: 1px solid alpha(#414149, 0.64);
-}
-
-window.rift-shortcut-capture box.settings-capture-box {
-    background-color: transparent;
-}
-
-window.rift-shortcut-capture label.settings-capture-title {
-    color: #f4f4f5;
-    font-size: 15px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-}
-
-window.rift-shortcut-capture label.settings-capture-hint {
-    color: #85858c;
-    font-size: 12px;
-}
-
-window.rift-shortcut-capture box.settings-capture-keycap {
-    background-color: #161619;
-    border: 1px solid #34343a;
-    border-radius: 10px;
-    padding: 14px 22px;
-    margin: 4px 0;
-    min-height: 44px;
-}
-
-window.rift-shortcut-capture label.settings-capture-value {
-    color: #f4f4f5;
-    font-size: 18px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-}
-
-window.rift-shortcut-capture box.settings-capture-actions {
-    margin-top: 6px;
-}
-
-window.rift-shortcut-capture button.settings-capture-cancel,
-window.rift-shortcut-capture button.settings-capture-confirm {
-    min-height: 30px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 500;
-}
-
-window.rift-shortcut-capture button.settings-capture-cancel {
-    background-color: #232327;
-    border: 1px solid #34343a;
-    color: #e4e4e7;
-}
-
-window.rift-shortcut-capture button.settings-capture-cancel:hover {
-    background-color: #2a2a2f;
-}
-"#;
-
 pub(crate) fn built_in_css() -> String {
     [
         LAUNCHER_WINDOW_CSS,
         LAUNCHER_SEARCH_CSS,
         LAUNCHER_RESULTS_CSS,
         SETTINGS_WINDOW_CSS,
-        SHORTCUT_CAPTURE_CSS,
     ]
     .join("\n")
 }

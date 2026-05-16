@@ -83,11 +83,17 @@ pub fn list_available_themes() -> Vec<ThemeEntry> {
         } else if b.manifest.id == DEFAULT_THEME_ID {
             std::cmp::Ordering::Greater
         } else {
-            a.manifest.name.to_lowercase().cmp(&b.manifest.name.to_lowercase())
+            a.manifest
+                .name
+                .to_lowercase()
+                .cmp(&b.manifest.name.to_lowercase())
         }
     });
 
-    if !entries.iter().any(|entry| entry.manifest.id == DEFAULT_THEME_ID) {
+    if !entries
+        .iter()
+        .any(|entry| entry.manifest.id == DEFAULT_THEME_ID)
+    {
         let path = active_theme_path();
         entries.insert(
             0,
